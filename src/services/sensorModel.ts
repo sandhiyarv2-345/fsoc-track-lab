@@ -1,4 +1,4 @@
-import { SensorFrame, SimulationConfig, Target, CameraGimbalState } from '../types';
+import { SensorFrame, SimulationConfig, Target, CameraGimbalState, SimulationNoise } from '../types';
 
 // Sensor resolution: 640x480 pixels
 const SENSOR_WIDTH = 640;
@@ -34,7 +34,8 @@ export function generateSensorFrame(
   beacon: Target | undefined,
   camera: CameraGimbalState,
   config: SimulationConfig,
-  elapsedSec: number
+  elapsedSec: number,
+  noise?: SimulationNoise
 ): SensorFrame {
   const effectiveFov = config.cameraFov / camera.zoom;
   const intensity = config.disturbances.intensity / 100;
@@ -88,8 +89,13 @@ export function generateSensorFrame(
   let turbulenceOffsetX = 0;
   let turbulenceOffsetY = 0;
   if (config.disturbances.atmosphericTurbulence) {
-    turbulenceOffsetX = (gaussianRandom() * 2.5 + Math.sin(elapsedSec * 5.1) * 1.5) * intensity;
-    turbulenceOffsetY = (gaussianRandom() * 2.0 + Math.cos(elapsedSec * 4.3) * 1.2) * intensity;
+    if (noise) {
+      turbulenceOffsetX = (noise.turbulenceXRng() * 2.5 + Math.sin(elapsedSec * 5.1) * 1.5) * intensity;
+      turbulenceOffsetY = (noise.turbulenceYRng() * 2.0 + Math.cos(elapsedSec * 4.3) * 1.2) * intensity;
+    } else {
+      turbulenceOffsetX = (gaussianRandom() * 2.5 + Math.sin(elapsedSec * 5.1) * 1.5) * intensity;
+      turbulenceOffsetY = (gaussianRandom() * 2.0 + Math.cos(elapsedSec * 4.3) * 1.2) * intensity;
+    }
   }
 
   const signalPower = beaconIntensity * beaconIntensity * 1000;
@@ -100,7 +106,8 @@ export function generateSensorFrame(
     ? intensity * 0.15 * (1 - vignettingFactor)
     : 0;
 
-  const beaconPresent = inFov && beaconIntensity > 0.05 && Math.random() > dropoutChance;
+  const dropoutRand = noise ? noise.dropoutRng() : Math.random();
+  const beaconPresent = inFov && beaconIntensity > 0.05 && dropoutRand > dropoutChance;
 
   return {
     width: SENSOR_WIDTH,

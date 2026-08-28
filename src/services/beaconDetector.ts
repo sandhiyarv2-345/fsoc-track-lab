@@ -1,4 +1,4 @@
-import { SensorFrame, DetectionResult, TrackingAlgorithm } from '../types';
+import { SensorFrame, DetectionResult, TrackingAlgorithm, SimulationNoise } from '../types';
 import { pixelToAngle } from './sensorModel';
 
 // Coordinate frame: All measuredAz/measuredEl values produced by this module
@@ -28,7 +28,8 @@ interface BlobRegion {
 function findBeaconBlob(
   frame: SensorFrame,
   threshold: number,
-  searchRadius: number
+  searchRadius: number,
+  noise?: SimulationNoise
 ): BlobRegion | null {
   if (!frame.beaconPresent) return null;
 
@@ -55,9 +56,11 @@ function findBeaconBlob(
 
       if (dist > searchRadius) continue;
 
-      const noise = gaussianRandom() * frame.noiseLevel * 50;
+      const noiseVal = noise
+        ? noise.blobNoiseRng() * frame.noiseLevel * 50
+        : gaussianRandom() * frame.noiseLevel * 50;
       const pixelIntensity = frame.beaconIntensity * Math.exp(-dist * dist / (2 * searchRadius * searchRadius * 0.25));
-      const noisyIntensity = pixelIntensity + noise;
+      const noisyIntensity = pixelIntensity + noiseVal;
 
       if (noisyIntensity > threshold) {
         sumX += x * noisyIntensity;
@@ -84,7 +87,8 @@ export function detectBeacon(
   frame: SensorFrame,
   algorithm: TrackingAlgorithm,
   effectiveFov: number,
-  elapsedSec: number
+  elapsedSec: number,
+  noise?: SimulationNoise
 ): DetectionResult {
   if (!frame.beaconPresent || frame.beaconIntensity < 0.03) {
     return {
@@ -108,7 +112,7 @@ export function detectBeacon(
     searchRadius = 30;
   }
 
-  const blob = findBeaconBlob(frame, threshold, searchRadius);
+  const blob = findBeaconBlob(frame, threshold, searchRadius, noise);
 
   if (!blob) {
     return {
@@ -121,8 +125,12 @@ export function detectBeacon(
     };
   }
 
-  const detectionNoiseAz = gaussianRandom() * frame.noiseLevel * 2.5;
-  const detectionNoiseEl = gaussianRandom() * frame.noiseLevel * 2.0;
+  const detectionNoiseAz = noise
+    ? noise.detectionNoiseAzRng() * frame.noiseLevel * 2.5
+    : gaussianRandom() * frame.noiseLevel * 2.5;
+  const detectionNoiseEl = noise
+    ? noise.detectionNoiseElRng() * frame.noiseLevel * 2.0
+    : gaussianRandom() * frame.noiseLevel * 2.0;
 
   const measuredPixelX = blob.centroidX + detectionNoiseAz;
   const measuredPixelY = blob.centroidY + detectionNoiseEl;

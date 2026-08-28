@@ -31,6 +31,7 @@ import { CameraView } from './components/CameraView';
 import { PerformanceView } from './components/PerformanceView';
 import { ScenariosLogsView } from './components/ScenariosLogsView';
 import { SettingsView } from './components/SettingsView';
+import { BenchmarkView } from './components/BenchmarkView';
 import { DocumentationModal } from './components/DocumentationModal';
 import { SupportModal } from './components/SupportModal';
 
@@ -390,6 +391,14 @@ export default function App() {
                   setSettings(newSettings);
                   addLog('SETTINGS_UPDATE', 'Lab settings updated.', 'info');
                 }}
+              />
+            )}
+
+            {currentScreen === 'benchmark' && (
+              <BenchmarkView
+                isSimRunning={isSimRunning}
+                activeConfig={activeConfig}
+                settings={settings}
               />
             )}
 

@@ -1,6 +1,7 @@
 import {
   SimulationConfig, Target, CameraGimbalState, TelemetryPoint, LogEntry, Scenario,
   AppSettings, PerformanceStats, TrackingPipelineState, TrackingAlgorithm,
+  SimulationNoise,
 } from '../types';
 import { generateSensorFrame } from './sensorModel';
 import { detectBeacon } from './beaconDetector';
@@ -200,7 +201,8 @@ export function initializeTargets(config: SimulationConfig): Target[] {
 export function updateTargetPositions(
   targets: Target[],
   elapsedSec: number,
-  config: SimulationConfig
+  config: SimulationConfig,
+  noise?: SimulationNoise
 ): Target[] {
   const dt = 0.016;
   const speedMultiplier = config.targetSpeedMach * 0.6;
@@ -253,8 +255,14 @@ export function updateTargetPositions(
     }
 
     if (config.disturbances.motionJitter) {
-      x += (Math.random() - 0.5) * 4 * intensity;
-      y += (Math.random() - 0.5) * 3 * intensity;
+      const jitterRng = noise?.targetJitterRngs?.[idx];
+      if (jitterRng) {
+        x += (jitterRng() - 0.5) * 4 * intensity;
+        y += (jitterRng() - 0.5) * 3 * intensity;
+      } else {
+        x += (Math.random() - 0.5) * 4 * intensity;
+        y += (Math.random() - 0.5) * 3 * intensity;
+      }
     }
 
     const range = Math.sqrt(x * x + y * y + z * z);
@@ -303,7 +311,8 @@ export function runTrackingPipeline(
   config: SimulationConfig,
   settings: AppSettings,
   elapsedSec: number,
-  dt: number
+  dt: number,
+  noise?: SimulationNoise
 ): {
   pipeline: TrackingPipelineState;
   camera: CameraGimbalState;
@@ -330,9 +339,9 @@ export function runTrackingPipeline(
   const groundTruthAz = beacon ? beacon.azimuth : 0;
   const groundTruthEl = beacon ? beacon.elevation : 0;
 
-  const sensorFrame = generateSensorFrame(beacon, camera, config, elapsedSec);
+  const sensorFrame = generateSensorFrame(beacon, camera, config, elapsedSec, noise);
 
-  const rawDetection = detectBeacon(sensorFrame, algorithm, effectiveFov, elapsedSec);
+  const rawDetection = detectBeacon(sensorFrame, algorithm, effectiveFov, elapsedSec, noise);
 
   // Convert relative detector output to absolute angles.
   // The sensor pixel→angle pipeline (sensorModel.pixelToAngle) returns angles
@@ -486,7 +495,9 @@ export function runTrackingPipeline(
   const telemetry: TelemetryPoint = {
     timeSec: elapsedSec,
     formattedTime,
-    fps: 58 + Math.round(Math.random() * 3),
+    fps: noise
+      ? Math.round(55 + noise.fpsRng() * 6)
+      : 58 + Math.round(Math.random() * 3),
     pan: parseFloat(newPan.toFixed(1)),
     tilt: parseFloat(newTilt.toFixed(1)),
     panError: parseFloat(measuredPanError.toFixed(2)),
@@ -497,7 +508,9 @@ export function runTrackingPipeline(
     confidence: parseFloat(confidence.toFixed(1)),
     status,
     range: beacon ? beacon.range : 0,
-    cpuLoad: Math.round(12 + (config.disturbances.intensity * 0.1) + Math.random() * 2),
+    cpuLoad: noise
+      ? Math.round(12 + (config.disturbances.intensity * 0.1) + noise.cpuRng() * 2)
+      : Math.round(12 + (config.disturbances.intensity * 0.1) + Math.random() * 2),
     gpuMem: parseFloat((1.2 + (config.targetCount * 0.08)).toFixed(1)),
     groundTruthAz: parseFloat(groundTruthAz.toFixed(2)),
     groundTruthEl: parseFloat(groundTruthEl.toFixed(2)),
@@ -523,7 +536,7 @@ export function runTrackingPipeline(
   };
 }
 
-export function generatePerformanceSummary(history: TelemetryPoint[]): PerformanceStats {
+export function generatePerformanceSummary(history: TelemetryPoint[], procTimeRng?: () => number): PerformanceStats {
   if (!history || history.length === 0) {
     return {
       duration: '02:35',
@@ -561,7 +574,7 @@ export function generatePerformanceSummary(history: TelemetryPoint[]): Performan
     maxError: `${maxErrorVal.toFixed(2)}`,
     lockRetention: `${lockRetentionVal}%`,
     avgFps: avgFpsVal,
-    procTime: `${Math.round(12 + Math.random() * 4)} ms`,
+    procTime: `${Math.round(12 + (procTimeRng ? procTimeRng() : Math.random()) * 4)} ms`,
     history,
   };
 }

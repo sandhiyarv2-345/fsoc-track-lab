@@ -25,6 +25,7 @@ export const Navigation: React.FC<NavigationProps> = ({
     { id: 'world3d' as NavScreen, label: '3D World', icon: 'language' },
     { id: 'scenarios' as NavScreen, label: 'Scenarios', icon: 'list_alt' },
     { id: 'performance' as NavScreen, label: 'Performance', icon: 'analytics' },
+    { id: 'benchmark' as NavScreen, label: 'Benchmark', icon: 'science' },
     { id: 'logs' as NavScreen, label: 'Logs', icon: 'description' },
     { id: 'settings' as NavScreen, label: 'Settings', icon: 'settings' },
   ];

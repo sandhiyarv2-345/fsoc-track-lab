@@ -2,16 +2,17 @@
  * FSOC Track Lab - Core Type Definitions
  */
 
-export type NavScreen = 
-  | 'landing' 
-  | 'dashboard' 
-  | 'simulation' 
-  | 'cameraview' 
-  | 'world3d' 
-  | 'scenarios' 
-  | 'performance' 
-  | 'logs' 
-  | 'settings';
+export type NavScreen =
+  | 'landing'
+  | 'dashboard'
+  | 'simulation'
+  | 'cameraview'
+  | 'world3d'
+  | 'scenarios'
+  | 'performance'
+  | 'logs'
+  | 'settings'
+  | 'benchmark';
 
 export type TrackingStatus = 'IDLE' | 'SEARCHING' | 'ACQUIRING' | 'LOCKED' | 'LOST';
 
@@ -192,4 +193,81 @@ export interface PerformanceStats {
   avgFps: string;
   procTime: string;
   history: TelemetryPoint[];
+}
+
+// ── Benchmark types ──
+
+export interface BenchmarkConfig {
+  simulationConfig: SimulationConfig;
+  settings: AppSettings;
+  seed: number;
+  algorithms: TrackingAlgorithm[];
+}
+
+export interface AlgorithmResult {
+  algorithm: TrackingAlgorithm;
+  telemetryHistory: TelemetryPoint[];
+  stats: PerformanceStats;
+  metrics: AlgorithmMetrics;
+}
+
+export interface AlgorithmMetrics {
+  avgTotalError: number;
+  maxTotalError: number;
+  lockRetentionPct: number;
+  acquisitionTimeSec: number;
+  avgConfidence: number;
+  avgFps: number;
+}
+
+export interface BenchmarkComparison {
+  results: AlgorithmResult[];
+  scoringWeights: ScoringWeights;
+  scoredResults: { algorithm: TrackingAlgorithm; score: number; breakdown: Record<string, number> }[];
+  recommendation: TrackingAlgorithm;
+  recommendationReason: string;
+}
+
+export interface ScoringWeights {
+  avgError: number;
+  maxError: number;
+  lockRetention: number;
+  acqTime: number;
+  confidence: number;
+}
+
+export interface BenchmarkResult {
+  config: BenchmarkConfig;
+  comparison: BenchmarkComparison;
+  timestamp: string;
+}
+
+// ── Per-noise-source RNG streams for deterministic benchmarks ──
+//
+// Each noise source gets its own RNG seeded from (masterSeed, sourceId, timestep).
+// Different algorithms may consume different amounts from blobNoiseRng (because
+// their search radii differ), but since each timestep's stream is freshly seeded,
+// cross-timestep contamination is impossible and other streams are unaffected.
+
+export interface SimulationNoise {
+  /** One RNG per target for motion jitter */
+  targetJitterRngs: Array<() => number>;
+  /** Gaussian RNG for turbulence offset X */
+  turbulenceXRng: () => number;
+  /** Gaussian RNG for turbulence offset Y */
+  turbulenceYRng: () => number;
+  /** Uniform RNG for dropout decision */
+  dropoutRng: () => number;
+  /** Gaussian RNG for blob-finding pixel noise (consumed variable amounts) */
+  blobNoiseRng: () => number;
+  /** Gaussian RNG for detection centroid noise azimuth */
+  detectionNoiseAzRng: () => number;
+  /** Gaussian RNG for detection centroid noise elevation */
+  detectionNoiseElRng: () => number;
+  /** Uniform RNG for telemetry FPS */
+  fpsRng: () => number;
+  /** Uniform RNG for telemetry CPU load */
+  cpuRng: () => number;
+  /** Uniform RNG for performance summary procTime */
+  procTimeRng: () => number;
 }
