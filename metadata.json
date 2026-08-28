@@ -1,0 +1,6 @@
+{
+  "name": "FSOC Track Lab",
+  "description": "A high-fidelity virtual aerospace laboratory for simulating and testing AI-powered coarse alignment and camera tracking for mobile Free Space Optical Communication (FSOC) terminals.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

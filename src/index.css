@@ -1,0 +1,165 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --color-bg: #101416;
+    --color-surface: #101416;
+    --color-surface-dim: #101416;
+    --color-surface-bright: #363a3c;
+    --color-surface-lowest: #0b0f11;
+    --color-surface-low: #191c1e;
+    --color-surface-container: #1d2022;
+    --color-surface-high: #272a2d;
+    --color-surface-highest: #323538;
+    --color-surface-variant: #323538;
+    --color-on-surface: #e0e3e6;
+    --color-on-surface-variant: #ddc1b3;
+    --color-primary: #ffb68d;
+    --color-primary-container: #ff8a3d;
+    --color-on-primary: #532200;
+    --color-on-primary-container: #682d00;
+    --color-secondary: #42e09c;
+    --color-secondary-container: #04c382;
+    --color-secondary-fixed: #65fdb6;
+    --color-secondary-fixed-dim: #42e09c;
+    --color-outline: #a58c7f;
+    --color-outline-variant: #564338;
+    --color-tertiary: #c1c7d3;
+    --color-tertiary-container: #a4a9b5;
+    --color-error: #ffb4ab;
+    --color-error-container: #93000a;
+    --color-on-error: #690005;
+    --color-on-error-container: #ffdad6;
+  }
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #101416;
+}
+::-webkit-scrollbar-thumb {
+  background: #323538;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #564338;
+}
+
+/* Technical Grids & Glows */
+.grid-bg {
+  background-size: 40px 40px;
+  background-image: linear-gradient(to right, rgba(86, 67, 56, 0.12) 1px, transparent 1px),
+                    linear-gradient(to bottom, rgba(86, 67, 56, 0.12) 1px, transparent 1px);
+}
+
+.tech-grid-bg {
+  background-size: 32px 32px;
+  background-image: 
+    linear-gradient(to right, rgba(86, 67, 56, 0.15) 1px, transparent 1px), 
+    linear-gradient(to bottom, rgba(86, 67, 56, 0.15) 1px, transparent 1px);
+}
+
+.perspective-grid {
+  background-image: 
+    linear-gradient(to right, #26303B 1px, transparent 1px),
+    linear-gradient(to bottom, #26303B 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: center bottom;
+  transform: perspective(500px) rotateX(60deg);
+  transform-origin: bottom;
+}
+
+.glow-earth {
+  background: radial-gradient(circle at 50% 120%, rgba(255, 182, 141, 0.15) 0%, rgba(16, 20, 22, 0) 50%);
+}
+
+.glow-orange {
+  box-shadow: 0 0 15px 5px rgba(255, 138, 61, 0.4);
+}
+
+.glow-text-orange {
+  text-shadow: 0 0 8px rgba(255, 138, 61, 0.6);
+}
+
+.glow-secondary {
+  text-shadow: 0 0 8px rgba(66, 224, 156, 0.5);
+}
+
+.glow-primary {
+  text-shadow: 0 0 8px rgba(255, 182, 141, 0.5);
+}
+
+.glow-error {
+  text-shadow: 0 0 8px rgba(255, 180, 171, 0.5);
+}
+
+.font-mono-tech {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.font-headline {
+  font-family: 'Hanken Grotesk', sans-serif;
+}
+
+@keyframes scan {
+  0% { top: -10%; opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { top: 110%; opacity: 0; }
+}
+
+.animate-scan {
+  animation: scan 4s ease-in-out infinite;
+}
+
+@keyframes pulse-rec {
+  0% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.3; transform: scale(0.9); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.animate-rec {
+  animation: pulse-rec 1.8s infinite ease-in-out;
+}
+
+/* Material symbols adjustments */
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  vertical-align: middle;
+}
+.material-symbols-outlined.fill {
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* Range input styling */
+input[type=range] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 14px;
+  width: 14px;
+  background: #ffb68d;
+  cursor: pointer;
+  border-radius: 50%;
+  margin-top: -5px;
+  border: 1px solid #682d00;
+  box-shadow: 0 0 6px rgba(255, 182, 141, 0.5);
+}
+input[type=range]::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 4px;
+  cursor: pointer;
+  background: #323538;
+  border-radius: 2px;
+}
+input[type=range]:focus {
+  outline: none;
+}
