@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Target, CameraGimbalState, TelemetryPoint, SimulationConfig, AppSettings, NavScreen, TrackingAlgorithm } from '../types';
+import { Target, CameraGimbalState, TelemetryPoint, SimulationConfig, AppSettings, NavScreen, TrackingAlgorithm, BenchmarkContext } from '../types';
 
 interface CameraViewProps {
   targets: Target[];
@@ -12,6 +12,7 @@ interface CameraViewProps {
   onToggleSimRunning: () => void;
   isSimRunning: boolean;
   errorHistory: { pan: number; tilt: number; time: string }[];
+  benchmarkContext?: BenchmarkContext;
 }
 
 export const CameraView: React.FC<CameraViewProps> = ({
@@ -25,6 +26,7 @@ export const CameraView: React.FC<CameraViewProps> = ({
   onToggleSimRunning,
   isSimRunning,
   errorHistory,
+  benchmarkContext,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [zoomLevel, setZoomLevel] = useState<number>(1);
@@ -152,8 +154,12 @@ export const CameraView: React.FC<CameraViewProps> = ({
       targets.forEach((t) => {
         const dAz = t.azimuth - camera.pan;
         const dEl = t.elevation - camera.tilt;
-        const px = cx + (dAz / (fov / 2)) * (width / 2);
-        const py = cy - (dEl / (fov / 2)) * (height / 2);
+        const halfFovRad = (fov / 2) * Math.PI / 180;
+        const tanHalfFov = Math.tan(halfFovRad);
+        const normAz = Math.tan(dAz * Math.PI / 180) / tanHalfFov;
+        const normEl = Math.tan(dEl * Math.PI / 180) / tanHalfFov;
+        const px = cx + normAz * (width / 2);
+        const py = cy - normEl * (height / 2);
         const isVisible = px >= 0 && px <= width && py >= 0 && py <= height;
 
         if (!isVisible) return;
@@ -283,6 +289,24 @@ export const CameraView: React.FC<CameraViewProps> = ({
     <div className="flex-1 flex flex-col md:flex-row h-full overflow-hidden mt-14 md:mt-0 tech-grid-bg relative select-none pb-12">
       {/* Camera Sensor Feed & Controls */}
       <div className="flex-1 flex flex-col p-3 md:p-6 overflow-hidden">
+        {/* Benchmark Run Indicator */}
+        {benchmarkContext && benchmarkContext.config && (
+          <div className="mb-3 p-3 bg-[#1d2022] border border-[#42e09c]/40 rounded-lg flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="material-symbols-outlined text-[#42e09c]">science</span>
+              <div className="font-['JetBrains_Mono'] text-xs text-[#ddc1b3]">
+                <span className="text-[#42e09c] font-bold">BENCHMARK RUN</span> {' | '}
+                Config: <span className="font-mono">{benchmarkContext.configDisplayName || benchmarkContext.config.name}</span> {' | '}
+                Seed: <span className="font-mono">{benchmarkContext.seed}</span> {' | '}
+                Algorithm: <span className="text-[#ffb68d] font-bold">{camera.algorithm}</span>
+              </div>
+            </div>
+            <span className="px-2 py-1 bg-[#42e09c]/20 border border-[#42e09c] rounded text-[#42e09c] font-['JetBrains_Mono'] text-[10px] uppercase">
+              Live Verification
+            </span>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex justify-between items-center mb-3">
           <div className="flex items-center gap-3">

@@ -39,7 +39,14 @@ export const NewSimulationModal: React.FC<NewSimulationModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onStartSimulation(config);
+    const customConfig: SimulationConfig = {
+      ...config,
+      id: `custom_${Date.now()}`,
+      name: 'Custom Configuration',
+      configSource: 'custom',
+      configDisplayName: 'Custom Configuration',
+    };
+    onStartSimulation(customConfig);
   };
 
   return (

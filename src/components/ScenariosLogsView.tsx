@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Scenario, LogEntry, SimulationConfig } from '../types';
+import { sanitizeCsvRow } from '../services/csvSanitize';
 
 interface ScenariosLogsViewProps {
   scenarios: Scenario[];
@@ -35,7 +36,7 @@ export const ScenariosLogsView: React.FC<ScenariosLogsViewProps> = ({
     const headers = ['Time', 'Event', 'Data', 'Type'];
     const rows = logs.map((l) => [l.time, l.event, `"${l.data.replace(/"/g, '""')}"`, l.type]);
     const csvContent =
-      'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+      'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => sanitizeCsvRow(e).join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
@@ -172,6 +173,7 @@ export const ScenariosLogsView: React.FC<ScenariosLogsViewProps> = ({
               <h2 className="font-['JetBrains_Mono'] text-[11px] text-[#ddc1b3] uppercase tracking-widest font-bold">
                 PERFORMANCE LOG
               </h2>
+              <span className="text-[9px] text-[#42e09c] font-['JetBrains_Mono'] uppercase">Live Events</span>
             </div>
 
             {/* Filter Input */}
@@ -240,7 +242,7 @@ export const ScenariosLogsView: React.FC<ScenariosLogsViewProps> = ({
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-[#42e09c] animate-pulse"></span>
               <span className="font-['JetBrains_Mono'] text-[10px] text-[#42e09c] uppercase tracking-wider">
-                Telemetry Stream Active (50Hz)
+                {isSimRunning ? 'Telemetry Stream Active (50Hz)' : 'Telemetry Stream Standby'}
               </span>
             </div>
 

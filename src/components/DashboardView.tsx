@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TelemetryPoint, SimulationConfig } from '../types';
+import { TelemetryPoint, SimulationConfig, TrackingAlgorithm } from '../types';
 
 interface DashboardViewProps {
   onNewSimulation: () => void;
@@ -9,6 +9,7 @@ interface DashboardViewProps {
   telemetry: TelemetryPoint;
   isSimRunning: boolean;
   activeConfig: SimulationConfig;
+  activeAlgorithm: TrackingAlgorithm;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -19,6 +20,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   telemetry,
   isSimRunning,
   activeConfig,
+  activeAlgorithm,
 }) => {
   const [utcTime, setUtcTime] = useState<string>('');
 
@@ -88,7 +90,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   className="inline-flex items-center gap-2 px-4 py-2 bg-[#ff8a3d]/20 border border-[#ff8a3d]/40 rounded-full font-['JetBrains_Mono'] text-[11px] text-[#ffb68d] uppercase tracking-wider hover:bg-[#ff8a3d]/30 transition-all cursor-pointer"
                 >
                   <span className="material-symbols-outlined text-[14px]">videocam</span>
-                  Sim Active: {activeConfig.name} &bull; View Feed &rarr;
+                  Sim Active: {activeConfig.configDisplayName || activeConfig.name} &bull; {activeAlgorithm} &bull; View Feed &rarr;
                 </button>
               ) : (
                 <div className="inline-flex items-center gap-2 px-4 py-2 bg-[#323538]/50 border border-[#564338]/50 rounded-full font-['JetBrains_Mono'] text-[11px] text-[#ddc1b3] uppercase tracking-wider">

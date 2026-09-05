@@ -42,7 +42,9 @@ import {
   initTrackingPipeline,
   runTrackingPipeline,
   generatePerformanceSummary,
+  validateSimulationConfig,
 } from './simulationEngine';
+import { sanitizeCsvRow } from './csvSanitize';
 
 // ── Deterministic PRNG: mulberry32 ──
 function mulberry32(seed: number): () => number {
@@ -395,12 +397,15 @@ function generateRecommendation(
 export function runBenchmark(config: BenchmarkConfig): BenchmarkResult {
   const { simulationConfig, settings, seed, algorithms } = config;
 
+  // Validate and sanitize config to prevent NaN, Infinity, or extreme values
+  const safeConfig = validateSimulationConfig(simulationConfig);
+
   // Create the base target state deterministically from the seed.
   // initializeTargets uses Math.random(), so we temporarily install the
   // seeded PRNG. This is the ONLY Math.random()-based step; all subsequent
   // environment noise comes from per-source streams.
   installSeededRng(seed);
-  const baseTargets = initializeTargets(simulationConfig);
+  const baseTargets = initializeTargets(safeConfig);
   restoreRng();
 
   // Run each algorithm headlessly with identical environment
@@ -409,7 +414,7 @@ export function runBenchmark(config: BenchmarkConfig): BenchmarkResult {
     const result = runAlgorithmHeadless(
       algorithm,
       baseTargets,
-      simulationConfig,
+      safeConfig,
       settings,
       seed
     );
@@ -459,7 +464,7 @@ export function benchmarkToCsv(result: BenchmarkResult): string {
       (r) => r.algorithm === sr.algorithm
     );
     const m = algorithmResult?.metrics;
-    return [
+    return sanitizeCsvRow([
       sr.algorithm,
       m ? m.avgTotalError.toFixed(3) : 'N/A',
       m ? m.maxTotalError.toFixed(3) : 'N/A',
@@ -468,7 +473,7 @@ export function benchmarkToCsv(result: BenchmarkResult): string {
       m ? m.avgConfidence.toFixed(1) : 'N/A',
       m ? m.avgFps.toFixed(1) : 'N/A',
       (sr.score * 100).toFixed(1),
-    ].join(',');
+    ]).join(',');
   });
 
   return [headers.join(','), ...rows].join('\n');

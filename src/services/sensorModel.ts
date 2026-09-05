@@ -59,8 +59,10 @@ export function generateSensorFrame(
   const relEl = beacon.elevation - camera.tilt;
 
   const halfFov = effectiveFov / 2;
-  const normalizedAz = relAz / halfFov;
-  const normalizedEl = relEl / halfFov;
+  const halfFovRad = (halfFov * Math.PI) / 180;
+  const tanHalfFov = Math.tan(halfFovRad);
+  const normalizedAz = Math.tan(relAz * Math.PI / 180) / tanHalfFov;
+  const normalizedEl = Math.tan(relEl * Math.PI / 180) / tanHalfFov;
 
   const beaconPixelX = (normalizedAz + 1) / 2 * SENSOR_WIDTH;
   const beaconPixelY = (-normalizedEl + 1) / 2 * SENSOR_HEIGHT;
@@ -135,9 +137,9 @@ export function pixelToAngle(
   const normalizedX = (pixelX / sensorWidth) * 2 - 1;
   const normalizedY = 1 - (pixelY / sensorHeight) * 2;
 
-  const halfFov = effectiveFov / 2;
-  const az = normalizedX * halfFov;
-  const el = normalizedY * halfFov;
+  const halfFovRad = (effectiveFov / 2) * Math.PI / 180;
+  const az = Math.atan(normalizedX * Math.tan(halfFovRad)) * 180 / Math.PI;
+  const el = Math.atan(normalizedY * Math.tan(halfFovRad)) * 180 / Math.PI;
 
   return { az, el };
 }

@@ -4,6 +4,7 @@ import {
   SimulationConfig,
   AppSettings,
   TrackingAlgorithm,
+  BenchmarkContext,
 } from '../types';
 import { PRESET_SCENARIOS } from '../services/simulationEngine';
 import { runBenchmark, benchmarkToCsv } from '../services/benchmarkRunner';
@@ -12,6 +13,16 @@ interface BenchmarkViewProps {
   isSimRunning: boolean;
   activeConfig: SimulationConfig;
   settings: AppSettings;
+  benchmarkContext: BenchmarkContext;
+  onSaveBenchmarkContext: (
+    result: BenchmarkResult,
+    config: SimulationConfig,
+    seed: number,
+    configSource: 'preset' | 'custom',
+    selectedPresetIndex: number,
+    configDisplayName: string,
+  ) => void;
+  onRunBenchmarkAlgorithm: (config: SimulationConfig, seed: number, algorithm: TrackingAlgorithm) => void;
 }
 
 type ConfigSource = 'preset' | 'custom';
@@ -20,16 +31,27 @@ export const BenchmarkView: React.FC<BenchmarkViewProps> = ({
   isSimRunning,
   activeConfig,
   settings,
+  benchmarkContext,
+  onSaveBenchmarkContext,
+  onRunBenchmarkAlgorithm,
 }) => {
-  const [configSource, setConfigSource] = useState<ConfigSource>('preset');
-  const [selectedPresetIndex, setSelectedPresetIndex] = useState<number>(0);
-  const [snapshotConfig, setSnapshotConfig] = useState<SimulationConfig | null>(null);
+  const [configSource, setConfigSource] = useState<ConfigSource>(
+    benchmarkContext.configSource === 'custom' ? 'custom' : 'preset'
+  );
+  const [selectedPresetIndex, setSelectedPresetIndex] = useState<number>(
+    benchmarkContext.selectedPresetIndex ?? 0
+  );
+  const [snapshotConfig, setSnapshotConfig] = useState<SimulationConfig | null>(
+    benchmarkContext.configSource === 'custom' ? benchmarkContext.config : null
+  );
   const [snapshotSettings, setSnapshotSettings] = useState<AppSettings | null>(null);
-  const [hasSnapshot, setHasSnapshot] = useState<boolean>(false);
-  const [seed, setSeed] = useState<number>(42);
+  const [hasSnapshot, setHasSnapshot] = useState<boolean>(
+    benchmarkContext.configSource === 'custom' && benchmarkContext.config !== null
+  );
+  const [seed, setSeed] = useState<number>(benchmarkContext.seed ?? 42);
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [progress, setProgress] = useState<string>('');
-  const [result, setResult] = useState<BenchmarkResult | null>(null);
+  const [result, setResult] = useState<BenchmarkResult | null>(benchmarkContext.result);
 
   const scenarios = PRESET_SCENARIOS;
 
@@ -76,6 +98,17 @@ export const BenchmarkView: React.FC<BenchmarkViewProps> = ({
             });
 
             setResult(benchmarkResult);
+            const configDisplayName = configSource === 'custom'
+              ? 'Custom Configuration'
+              : scenarios[selectedPresetIndex]?.title ?? 'Preset';
+            onSaveBenchmarkContext(
+              benchmarkResult,
+              resolvedConfig,
+              seed,
+              configSource,
+              selectedPresetIndex,
+              configDisplayName,
+            );
             setProgress('Benchmark complete.');
           } catch (err) {
             setProgress(`Error: ${err instanceof Error ? err.message : String(err)}`);
@@ -424,9 +457,48 @@ export const BenchmarkView: React.FC<BenchmarkViewProps> = ({
             <div className="font-['Hanken_Grotesk'] text-lg text-[#e0e3e6] font-bold mb-2">
               {result.comparison.recommendation}
             </div>
-            <p className="font-['JetBrains_Mono'] text-[11px] text-[#ddc1b3] leading-relaxed">
+            <p className="font-['JetBrains_Mono'] text-[11px] text-[#ddc1b3] leading-relaxed mb-4">
               {result.comparison.recommendationReason}
             </p>
+            
+            {/* Run Recommended Algorithm */}
+            <button
+              onClick={() => onRunBenchmarkAlgorithm(resolvedConfig, seed, result.comparison.recommendation)}
+              disabled={isSimRunning || isRunning}
+              className="w-full py-3 rounded font-['JetBrains_Mono'] text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2 bg-[#42e09c] hover:bg-[#38c98a] text-[#0d2b1a] shadow-[0_0_15px_rgba(66,224,156,0.25)] cursor-pointer disabled:bg-[#323538] disabled:text-[#a58c7f] disabled:cursor-not-allowed"
+            >
+              <span className="material-symbols-outlined text-[18px]">play_arrow</span>
+              RUN RECOMMENDED ALGORITHM
+            </button>
+            
+            <div className="font-['JetBrains_Mono'] text-[9px] text-[#a58c7f] mt-2 text-center">
+              Launches live simulation with benchmark config + seed + recommended algorithm
+            </div>
+
+            {/* Run Other Algorithms */}
+            <div className="mt-4 pt-4 border-t border-[#564338]/40">
+              <div className="font-['JetBrains_Mono'] text-[10px] text-[#ddc1b3] uppercase tracking-wider mb-2">
+                Run Other Algorithms (Same Config + Seed)
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {allAlgorithms.map((algo) => (
+                  <button
+                    key={algo}
+                    onClick={() => onRunBenchmarkAlgorithm(resolvedConfig, seed, algo)}
+                    disabled={isSimRunning || isRunning || algo === result.comparison.recommendation}
+                    className={`px-3 py-2 rounded font-['JetBrains_Mono'] text-[10px] uppercase transition-all flex items-center justify-center gap-1 ${
+                      algo === result.comparison.recommendation
+                        ? 'bg-[#42e09c]/20 border border-[#42e09c] text-[#42e09c] cursor-default'
+                        : isSimRunning || isRunning
+                        ? 'bg-[#323538] text-[#a58c7f] border border-[#564338] cursor-not-allowed'
+                        : 'bg-[#323538] hover:bg-[#363a3c] border border-[#564338] text-[#e0e3e6] cursor-pointer'
+                    }`}
+                  >
+                    {algo}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           {/* Score Breakdown */}

@@ -8,11 +8,43 @@ import { detectBeacon } from './beaconDetector';
 import { createInitialKalmanState, kalmanPredict, kalmanUpdate, kalmanGetEstimate } from './kalmanFilter';
 import { createInitialPidState, computePid } from './pidController';
 
+function clamp(val: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, val));
+}
+
+/**
+ * Validate and sanitize simulation config parameters.
+ * Prevents NaN, Infinity, negative values, and excessively large values
+ * that could cause runaway loops or resource exhaustion.
+ */
+export function validateSimulationConfig(config: SimulationConfig): SimulationConfig {
+  const validTrajectories: string[] = ['Random', 'Linear Escape', 'Evasive Maneuvers', 'Orbital Pattern', 'Sinusoidal Drift'];
+  return {
+    ...config,
+    targetCount: clamp(Math.floor(Number(config.targetCount) || 1), 1, 20),
+    designatedBeaconIndex: [1, 2, 3, 4, 5, 6, 7, 8, -1].includes(config.designatedBeaconIndex) ? config.designatedBeaconIndex : 1,
+    targetSpeedMach: clamp(Number(config.targetSpeedMach) || 1.0, 0.1, 10.0),
+    trajectory: validTrajectories.includes(config.trajectory) ? config.trajectory : 'Random',
+    cameraFov: clamp(Math.floor(Number(config.cameraFov) || 20), 1, 180),
+    panSpeedLimit: clamp(Math.floor(Number(config.panSpeedLimit) || 30), 1, 200),
+    tiltSpeedLimit: clamp(Math.floor(Number(config.tiltSpeedLimit) || 25), 1, 200),
+    durationSec: clamp(Math.floor(Number(config.durationSec) || 30), 5, 600),
+    timeStep: clamp(Number(config.timeStep) || 0.016, 0.001, 0.1),
+    disturbances: {
+      sensorNoise: Boolean(config.disturbances?.sensorNoise),
+      vibration: Boolean(config.disturbances?.vibration),
+      atmosphericTurbulence: Boolean(config.disturbances?.atmosphericTurbulence),
+      motionJitter: Boolean(config.disturbances?.motionJitter),
+      intensity: clamp(Math.floor(Number(config.disturbances?.intensity) || 50), 0, 100),
+    },
+  };
+}
+
 export const DEFAULT_SETTINGS: AppSettings = {
   uiTheme: 'dark',
   coordinateUnits: 'metric',
   reticleStyle: 'crosshair',
-  defaultDuration: 120,
+  defaultDuration: 30,
   timeStep: 0.016,
   baseNoiseVariance: '1.5e-4',
   logDirPath: '/opt/fsoc/lab/logs',
@@ -23,9 +55,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
   pidKd: 0.45,
 };
 
+
+
 export const DEFAULT_CONFIG: SimulationConfig = {
   id: 'sim_default',
   name: 'Demo-01 (Easy)',
+  configSource: 'preset',
+  configDisplayName: 'Demo-01 (Easy)',
   targetCount: 1,
   designatedBeaconIndex: 1,
   targetSpeedMach: 2.4,
@@ -41,7 +77,7 @@ export const DEFAULT_CONFIG: SimulationConfig = {
     motionJitter: true,
     intensity: 80,
   },
-  durationSec: 120,
+  durationSec: 30,
   timeStep: 0.016,
 };
 
@@ -55,6 +91,8 @@ export const PRESET_SCENARIOS: Scenario[] = [
     config: {
       id: 'scen_1',
       name: 'Demo-01 (Easy)',
+      configSource: 'preset',
+      configDisplayName: 'Demo-01 (Easy)',
       targetCount: 1,
       designatedBeaconIndex: 1,
       targetSpeedMach: 1.2,
@@ -70,7 +108,7 @@ export const PRESET_SCENARIOS: Scenario[] = [
         motionJitter: false,
         intensity: 20,
       },
-      durationSec: 120,
+      durationSec: 30,
       timeStep: 0.016,
     },
   },
@@ -83,6 +121,8 @@ export const PRESET_SCENARIOS: Scenario[] = [
     config: {
       id: 'scen_2',
       name: 'Demo-02 (Multiple Targets)',
+      configSource: 'preset',
+      configDisplayName: 'Demo-02 (Multiple Targets)',
       targetCount: 5,
       designatedBeaconIndex: 1,
       targetSpeedMach: 1.8,
@@ -98,7 +138,7 @@ export const PRESET_SCENARIOS: Scenario[] = [
         motionJitter: false,
         intensity: 50,
       },
-      durationSec: 150,
+      durationSec: 30,
       timeStep: 0.016,
     },
   },
@@ -111,6 +151,8 @@ export const PRESET_SCENARIOS: Scenario[] = [
     config: {
       id: 'scen_3',
       name: 'Demo-03 (High Speed)',
+      configSource: 'preset',
+      configDisplayName: 'Demo-03 (High Speed)',
       targetCount: 1,
       designatedBeaconIndex: 1,
       targetSpeedMach: 3.2,
@@ -126,7 +168,7 @@ export const PRESET_SCENARIOS: Scenario[] = [
         motionJitter: true,
         intensity: 75,
       },
-      durationSec: 155,
+      durationSec: 30,
       timeStep: 0.016,
     },
   },
@@ -139,6 +181,8 @@ export const PRESET_SCENARIOS: Scenario[] = [
     config: {
       id: 'scen_4',
       name: 'Demo-04 (Disturbances)',
+      configSource: 'preset',
+      configDisplayName: 'Demo-04 (Disturbances)',
       targetCount: 3,
       designatedBeaconIndex: 1,
       targetSpeedMach: 2.4,
@@ -154,7 +198,7 @@ export const PRESET_SCENARIOS: Scenario[] = [
         motionJitter: true,
         intensity: 85,
       },
-      durationSec: 180,
+      durationSec: 30,
       timeStep: 0.016,
     },
   },
@@ -301,6 +345,9 @@ export function initTrackingPipeline(
     lastMeasurementEl: initialTilt,
     lastEstimatedAz: initialPan,
     lastEstimatedEl: initialTilt,
+    deepBeaconSmoothedAz: initialPan,
+    deepBeaconSmoothedEl: initialTilt,
+    deepBeaconInitialized: false,
   };
 }
 
@@ -326,14 +373,13 @@ export function runTrackingPipeline(
   let distTilt = 0;
   const intensity = (config.disturbances.intensity / 100);
 
+  // Vibration: physically affects gimbal orientation (encoder reads disturbed position)
   if (config.disturbances.vibration) {
     distPan += Math.sin(elapsedSec * 25) * 0.18 * intensity;
     distTilt += Math.cos(elapsedSec * 32) * 0.15 * intensity;
   }
-  if (config.disturbances.atmosphericTurbulence) {
-    distPan += (Math.sin(elapsedSec * 8) + Math.sin(elapsedSec * 19)) * 0.12 * intensity;
-    distTilt += (Math.cos(elapsedSec * 7) + Math.cos(elapsedSec * 17)) * 0.1 * intensity;
-  }
+  // NOTE: Atmospheric turbulence is handled entirely in the sensor model
+  // (pixel offsets, scintillation, dropout). It does NOT affect gimbal position.
 
   // ── Coordinate frame: ground truth (absolute world angles) ──
   const groundTruthAz = beacon ? beacon.azimuth : 0;
@@ -395,11 +441,24 @@ export function runTrackingPipeline(
     setpointAz = estimatedAz;
     setpointEl = estimatedEl;
   } else if (algorithm === 'Deep Beacon') {
+    // Deep Beacon: Uses a more sensitive detector (lower threshold, larger search radius)
+    // and temporal smoothing (exponential moving average) to reduce centroid noise.
+    // This is a legitimate signal processing technique — temporal filtering improves
+    // SNR by averaging over multiple frames, at the cost of slight latency.
+    const alpha = 0.35;
     if (detection.detected) {
-      setpointAz = detection.measuredAz;
-      setpointEl = detection.measuredEl;
-      estimatedAz = detection.measuredAz;
-      estimatedEl = detection.measuredEl;
+      if (!newPipeline.deepBeaconInitialized) {
+        newPipeline.deepBeaconSmoothedAz = detection.measuredAz;
+        newPipeline.deepBeaconSmoothedEl = detection.measuredEl;
+        newPipeline.deepBeaconInitialized = true;
+      } else {
+        newPipeline.deepBeaconSmoothedAz = alpha * detection.measuredAz + (1 - alpha) * newPipeline.deepBeaconSmoothedAz;
+        newPipeline.deepBeaconSmoothedEl = alpha * detection.measuredEl + (1 - alpha) * newPipeline.deepBeaconSmoothedEl;
+      }
+      setpointAz = newPipeline.deepBeaconSmoothedAz;
+      setpointEl = newPipeline.deepBeaconSmoothedEl;
+      estimatedAz = newPipeline.deepBeaconSmoothedAz;
+      estimatedEl = newPipeline.deepBeaconSmoothedEl;
     } else if (newPipeline.consecutiveDropouts < 5) {
       setpointAz = newPipeline.lastMeasurementAz;
       setpointEl = newPipeline.lastMeasurementEl;
@@ -460,8 +519,8 @@ export function runTrackingPipeline(
 
   const truePanError = groundTruthAz - newPan;
   const trueTiltError = groundTruthEl - newTilt;
-  const measuredPanError = detection.detected ? detection.measuredAz - newPan : truePanError;
-  const measuredTiltError = detection.detected ? detection.measuredEl - newTilt : trueTiltError;
+  const measuredPanError = detection.detected ? detection.measuredAz - newPan : 0;
+  const measuredTiltError = detection.detected ? detection.measuredEl - newTilt : 0;
 
   const totalError = Math.sqrt(truePanError * truePanError + trueTiltError * trueTiltError);
 
@@ -514,8 +573,8 @@ export function runTrackingPipeline(
     gpuMem: parseFloat((1.2 + (config.targetCount * 0.08)).toFixed(1)),
     groundTruthAz: parseFloat(groundTruthAz.toFixed(2)),
     groundTruthEl: parseFloat(groundTruthEl.toFixed(2)),
-    measuredAz: parseFloat(detection.detected ? detection.measuredAz.toFixed(2) : groundTruthAz.toFixed(2)),
-    measuredEl: parseFloat(detection.detected ? detection.measuredEl.toFixed(2) : groundTruthEl.toFixed(2)),
+    measuredAz: parseFloat(detection.detected ? detection.measuredAz.toFixed(2) : newPipeline.lastMeasurementAz.toFixed(2)),
+    measuredEl: parseFloat(detection.detected ? detection.measuredEl.toFixed(2) : newPipeline.lastMeasurementEl.toFixed(2)),
     estimatedAz: parseFloat(estimatedAz.toFixed(2)),
     estimatedEl: parseFloat(estimatedEl.toFixed(2)),
     kalmanActive,

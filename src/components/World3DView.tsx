@@ -382,7 +382,7 @@ export const World3DView: React.FC<World3DViewProps> = ({
             <div>
               <div className="font-['JetBrains_Mono'] text-[9px] text-[#8994A3] uppercase">SCENARIO</div>
               <div className="font-['JetBrains_Mono'] text-[11px] text-[#F2F4F7]">
-                {config.name || 'Demo-01'}
+                {config.configDisplayName || config.name}
               </div>
             </div>
           </div>

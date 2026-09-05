@@ -34,6 +34,8 @@ export interface DisturbanceConfig {
 export interface SimulationConfig {
   id: string;
   name: string;
+  configSource?: 'preset' | 'custom';
+  configDisplayName?: string;
   targetCount: number; // 1, 2, 3, 5, 8
   designatedBeaconIndex: number; // 1-based index or -1 for auto
   targetSpeedMach: number; // e.g. 2.4
@@ -124,6 +126,9 @@ export interface TrackingPipelineState {
   lastMeasurementEl: number;
   lastEstimatedAz: number;
   lastEstimatedEl: number;
+  deepBeaconSmoothedAz: number;
+  deepBeaconSmoothedEl: number;
+  deepBeaconInitialized: boolean;
 }
 
 export interface TelemetryPoint {
@@ -193,6 +198,27 @@ export interface PerformanceStats {
   avgFps: string;
   procTime: string;
   history: TelemetryPoint[];
+}
+
+export interface CompletedAlgorithmRun {
+  algorithm: TrackingAlgorithm;
+  config: SimulationConfig;
+  configDisplayName: string;
+  seed: number;
+  telemetryHistory: TelemetryPoint[];
+  stats: PerformanceStats;
+  metrics: AlgorithmMetrics;
+  timestamp: string;
+}
+
+export interface BenchmarkContext {
+  result: BenchmarkResult | null;
+  config: SimulationConfig | null;
+  seed: number | null;
+  timestamp: string | null;
+  configSource: 'preset' | 'custom' | null;
+  selectedPresetIndex: number | null;
+  configDisplayName: string | null;
 }
 
 // ── Benchmark types ──
