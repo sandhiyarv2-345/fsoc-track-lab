@@ -27,8 +27,8 @@ export const ReportModal: React.FC<ReportModalProps> = ({ stats, config, complet
 
   const handleDownloadReport = () => {
     const refId = `FSOC-TR-${Date.now().toString(36).toUpperCase()}`;
-    const dateStr = new Date().toLocaleDateString();
-    const timeStr = new Date().toLocaleTimeString();
+    const dateStr = new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const timeStr = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }) + ' IST';
 
     const algoRows = ALGORITHMS.map(algo => {
       const run = completedRuns.find(r => r.algorithm === algo);

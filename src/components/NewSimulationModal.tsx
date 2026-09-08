@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { SimulationConfig, TrajectoryType } from '../types';
+import { SimulationConfig, TrajectoryType, AtmosphericCondition, ImageNoiseType, PlatformMotionType } from '../types';
 
 interface NewSimulationModalProps {
   initialConfig: SimulationConfig;
@@ -27,6 +27,32 @@ export const NewSimulationModal: React.FC<NewSimulationModalProps> = ({
         [key]: !prev.disturbances[key],
       },
     }));
+  };
+
+  const handleDisturbanceChange = <K extends keyof SimulationConfig['disturbances']>(
+    key: K,
+    value: SimulationConfig['disturbances'][K]
+  ) => {
+    setConfig((prev) => ({
+      ...prev,
+      disturbances: {
+        ...prev.disturbances,
+        [key]: value,
+      },
+    }));
+  };
+
+  const handleImageNoiseToggle = (type: ImageNoiseType) => {
+    setConfig((prev) => {
+      const current = prev.disturbances.imageNoiseTypes || [];
+      const next = current.includes(type)
+        ? current.filter((t) => t !== type)
+        : [...current, type];
+      return {
+        ...prev,
+        disturbances: { ...prev.disturbances, imageNoiseTypes: next },
+      };
+    });
   };
 
   const getIntensityLabel = (val: number) => {
@@ -158,13 +184,112 @@ export const NewSimulationModal: React.FC<NewSimulationModalProps> = ({
                   onChange={(e) => setConfig({ ...config, trajectory: e.target.value as TrajectoryType })}
                   className="w-full bg-[#323538] border border-[#564338] text-[#e0e3e6] font-['JetBrains_Mono'] text-xs p-2.5 rounded focus:border-[#ffb68d] focus:outline-none"
                 >
-                  <option value="Random">Random</option>
+                  <option value="Random">Random (PS Mandatory)</option>
+                  <option value="Straight Line">Straight Line (PS Mandatory)</option>
+                  <option value="Circular">Circular (PS Mandatory)</option>
+                  <option value="Figure of 8">Figure of 8 (PS Mandatory)</option>
                   <option value="Linear Escape">Linear Escape</option>
                   <option value="Evasive Maneuvers">Evasive Maneuvers</option>
                   <option value="Orbital Pattern">Orbital Pattern</option>
                   <option value="Sinusoidal Drift">Sinusoidal Drift</option>
                 </select>
               </div>
+
+              {/* Target Size */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex justify-between items-center">
+                  <label className="font-['JetBrains_Mono'] text-[10px] text-[#ddc1b3] uppercase tracking-wider">
+                    Target Size
+                  </label>
+                  <span className="font-['JetBrains_Mono'] text-[11px] text-[#42e09c] font-bold">
+                    {config.targetSizePx}px
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="5"
+                  max="20"
+                  value={config.targetSizePx}
+                  onChange={(e) => setConfig({ ...config, targetSizePx: parseInt(e.target.value) })}
+                  className="mt-1"
+                />
+                <div className="flex justify-between font-['JetBrains_Mono'] text-[9px] text-[#ddc1b3]/60 uppercase">
+                  <span>5px</span>
+                  <span>20px</span>
+                </div>
+              </div>
+
+              {/* Target Shape */}
+              <div className="flex flex-col gap-1.5">
+                <label className="font-['JetBrains_Mono'] text-[10px] text-[#ddc1b3] uppercase tracking-wider">
+                  Target Shape
+                </label>
+                <select
+                  value={config.targetShape}
+                  onChange={(e) => setConfig({ ...config, targetShape: e.target.value as 'square' | 'circle' })}
+                  className="w-full bg-[#323538] border border-[#564338] text-[#e0e3e6] font-['JetBrains_Mono'] text-xs p-2.5 rounded focus:border-[#ffb68d] focus:outline-none"
+                >
+                  <option value="square">Square (PS Default)</option>
+                  <option value="circle">Circle</option>
+                </select>
+              </div>
+
+              {/* Initial Target Location Mode */}
+              <div className="flex flex-col gap-1.5">
+                <label className="font-['JetBrains_Mono'] text-[10px] text-[#ddc1b3] uppercase tracking-wider">
+                  Initial Target Location
+                </label>
+                <select
+                  value={config.initialTargetLocationMode}
+                  onChange={(e) => setConfig({ ...config, initialTargetLocationMode: e.target.value as 'random' | 'user-defined' })}
+                  className="w-full bg-[#323538] border border-[#564338] text-[#e0e3e6] font-['JetBrains_Mono'] text-xs p-2.5 rounded focus:border-[#ffb68d] focus:outline-none"
+                >
+                  <option value="random">Random</option>
+                  <option value="user-defined">User-Defined</option>
+                </select>
+              </div>
+
+              {/* User-Defined Target Azimuth/Elevation */}
+              {config.initialTargetLocationMode === 'user-defined' && (
+                <>
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex justify-between items-center">
+                      <label className="font-['JetBrains_Mono'] text-[10px] text-[#ddc1b3] uppercase tracking-wider">
+                        Target Azimuth
+                      </label>
+                      <span className="font-['JetBrains_Mono'] text-[11px] text-[#42e09c] font-bold">
+                        {config.initialTargetAzimuth}°
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="-90"
+                      max="90"
+                      value={config.initialTargetAzimuth}
+                      onChange={(e) => setConfig({ ...config, initialTargetAzimuth: parseInt(e.target.value) })}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex justify-between items-center">
+                      <label className="font-['JetBrains_Mono'] text-[10px] text-[#ddc1b3] uppercase tracking-wider">
+                        Target Elevation
+                      </label>
+                      <span className="font-['JetBrains_Mono'] text-[11px] text-[#42e09c] font-bold">
+                        {config.initialTargetElevation}°
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="45"
+                      value={config.initialTargetElevation}
+                      onChange={(e) => setConfig({ ...config, initialTargetElevation: parseInt(e.target.value) })}
+                      className="mt-1"
+                    />
+                  </div>
+                </>
+              )}
             </div>
 
             {/* COLUMN 2: CAMERA SETTINGS */}
@@ -181,15 +306,39 @@ export const NewSimulationModal: React.FC<NewSimulationModalProps> = ({
                     FOV (Horizontal)
                   </label>
                   <span className="font-['JetBrains_Mono'] text-[11px] text-[#42e09c] font-bold">
-                    {config.cameraFov}°
+                    {config.cameraFovHorizontal || config.cameraFov}°
                   </span>
                 </div>
                 <input
                   type="range"
-                  min="5"
+                  min="2"
                   max="90"
-                  value={config.cameraFov}
-                  onChange={(e) => setConfig({ ...config, cameraFov: parseInt(e.target.value) })}
+                  value={config.cameraFovHorizontal || config.cameraFov}
+                  onChange={(e) => setConfig({ ...config, cameraFovHorizontal: parseInt(e.target.value), cameraFov: parseInt(e.target.value) })}
+                  className="mt-1"
+                />
+                <div className="flex justify-between font-['JetBrains_Mono'] text-[9px] text-[#ddc1b3]/60 uppercase">
+                  <span>Narrow</span>
+                  <span>Wide</span>
+                </div>
+              </div>
+
+              {/* Vertical FOV Slider */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex justify-between items-center">
+                  <label className="font-['JetBrains_Mono'] text-[10px] text-[#ddc1b3] uppercase tracking-wider">
+                    FOV (Vertical)
+                  </label>
+                  <span className="font-['JetBrains_Mono'] text-[11px] text-[#42e09c] font-bold">
+                    {config.cameraFovVertical}°
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="1"
+                  max="60"
+                  value={config.cameraFovVertical}
+                  onChange={(e) => setConfig({ ...config, cameraFovVertical: parseInt(e.target.value) })}
                   className="mt-1"
                 />
                 <div className="flex justify-between font-['JetBrains_Mono'] text-[9px] text-[#ddc1b3]/60 uppercase">
@@ -227,11 +376,15 @@ export const NewSimulationModal: React.FC<NewSimulationModalProps> = ({
                 <input
                   type="range"
                   min="5"
-                  max="90"
+                  max="10"
                   value={config.panSpeedLimit}
                   onChange={(e) => setConfig({ ...config, panSpeedLimit: parseInt(e.target.value) })}
                   className="mt-1"
                 />
+                <div className="flex justify-between font-['JetBrains_Mono'] text-[9px] text-[#ddc1b3]/60 uppercase">
+                  <span>5°/s</span>
+                  <span>10°/s</span>
+                </div>
               </div>
 
               {/* Tilt Speed Limit */}
@@ -247,9 +400,54 @@ export const NewSimulationModal: React.FC<NewSimulationModalProps> = ({
                 <input
                   type="range"
                   min="5"
-                  max="60"
+                  max="10"
                   value={config.tiltSpeedLimit}
                   onChange={(e) => setConfig({ ...config, tiltSpeedLimit: parseInt(e.target.value) })}
+                  className="mt-1"
+                />
+                <div className="flex justify-between font-['JetBrains_Mono'] text-[9px] text-[#ddc1b3]/60 uppercase">
+                  <span>5°/s</span>
+                  <span>10°/s</span>
+                </div>
+              </div>
+
+              {/* Screen Size */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex justify-between items-center">
+                  <label className="font-['JetBrains_Mono'] text-[10px] text-[#ddc1b3] uppercase tracking-wider">
+                    Screen Width
+                  </label>
+                  <span className="font-['JetBrains_Mono'] text-[11px] text-[#42e09c] font-bold">
+                    {config.screenWidth}px
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="2000"
+                  max="4000"
+                  step="100"
+                  value={config.screenWidth}
+                  onChange={(e) => setConfig({ ...config, screenWidth: parseInt(e.target.value) })}
+                  className="mt-1"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <div className="flex justify-between items-center">
+                  <label className="font-['JetBrains_Mono'] text-[10px] text-[#ddc1b3] uppercase tracking-wider">
+                    Screen Height
+                  </label>
+                  <span className="font-['JetBrains_Mono'] text-[11px] text-[#42e09c] font-bold">
+                    {config.screenHeight}px
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="2000"
+                  max="4000"
+                  step="100"
+                  value={config.screenHeight}
+                  onChange={(e) => setConfig({ ...config, screenHeight: parseInt(e.target.value) })}
                   className="mt-1"
                 />
               </div>
@@ -262,80 +460,224 @@ export const NewSimulationModal: React.FC<NewSimulationModalProps> = ({
                 DISTURBANCES
               </h3>
 
-              {/* Checkboxes */}
-              <div className="flex flex-col gap-3 font-['Hanken_Grotesk'] text-sm">
-                <label className="flex items-center gap-3 cursor-pointer group">
-                  <div
-                    onClick={() => handleDisturbanceToggle('sensorNoise')}
-                    className={`flex items-center justify-center w-4 h-4 rounded-sm border ${
-                      config.disturbances.sensorNoise
-                        ? 'border-[#ffb68d] bg-[#ffb68d] text-[#532200]'
-                        : 'border-[#564338] bg-[#323538] group-hover:border-[#ffb68d]'
-                    } transition-colors`}
-                  >
-                    {config.disturbances.sensorNoise && (
-                      <span className="material-symbols-outlined text-[13px] font-bold">check</span>
-                    )}
-                  </div>
-                  <span className="text-[#e0e3e6]" onClick={() => handleDisturbanceToggle('sensorNoise')}>
-                    Sensor Noise (Gaussian)
-                  </span>
+              {/* Platform Vibration Toggle */}
+              <div className="flex flex-col gap-1.5">
+                <label className="font-['JetBrains_Mono'] text-[10px] text-[#ddc1b3] uppercase tracking-wider">
+                  Platform Vibration
                 </label>
-
-                <label className="flex items-center gap-3 cursor-pointer group">
-                  <div
-                    onClick={() => handleDisturbanceToggle('vibration')}
-                    className={`flex items-center justify-center w-4 h-4 rounded-sm border ${
-                      config.disturbances.vibration
-                        ? 'border-[#ffb68d] bg-[#ffb68d] text-[#532200]'
-                        : 'border-[#564338] bg-[#323538] group-hover:border-[#ffb68d]'
-                    } transition-colors`}
-                  >
-                    {config.disturbances.vibration && (
-                      <span className="material-symbols-outlined text-[13px] font-bold">check</span>
-                    )}
-                  </div>
-                  <span className="text-[#e0e3e6]" onClick={() => handleDisturbanceToggle('vibration')}>
-                    Vibration (Platform)
-                  </span>
-                </label>
-
-                <label className="flex items-center gap-3 cursor-pointer group">
-                  <div
-                    onClick={() => handleDisturbanceToggle('atmosphericTurbulence')}
-                    className={`flex items-center justify-center w-4 h-4 rounded-sm border ${
-                      config.disturbances.atmosphericTurbulence
-                        ? 'border-[#ffb68d] bg-[#ffb68d] text-[#532200]'
-                        : 'border-[#564338] bg-[#323538] group-hover:border-[#ffb68d]'
-                    } transition-colors`}
-                  >
-                    {config.disturbances.atmosphericTurbulence && (
-                      <span className="material-symbols-outlined text-[13px] font-bold">check</span>
-                    )}
-                  </div>
-                  <span className="text-[#e0e3e6]" onClick={() => handleDisturbanceToggle('atmosphericTurbulence')}>
-                    Atmospheric Turbulence
-                  </span>
-                </label>
-
-                <label className="flex items-center gap-3 cursor-pointer group">
-                  <div
-                    onClick={() => handleDisturbanceToggle('motionJitter')}
-                    className={`flex items-center justify-center w-4 h-4 rounded-sm border ${
-                      config.disturbances.motionJitter
-                        ? 'border-[#ffb68d] bg-[#ffb68d] text-[#532200]'
-                        : 'border-[#564338] bg-[#323538] group-hover:border-[#ffb68d]'
-                    } transition-colors`}
-                  >
-                    {config.disturbances.motionJitter && (
-                      <span className="material-symbols-outlined text-[13px] font-bold">check</span>
-                    )}
-                  </div>
-                  <span className="text-[#e0e3e6]" onClick={() => handleDisturbanceToggle('motionJitter')}>
-                    Camera Motion Jitter
-                  </span>
-                </label>
+                <select
+                  value={config.disturbances.vibration ? 'on' : 'off'}
+                  onChange={(e) => handleDisturbanceChange('vibration', e.target.value === 'on')}
+                  className="w-full bg-[#323538] border border-[#564338] text-[#e0e3e6] font-['JetBrains_Mono'] text-xs p-2.5 rounded focus:border-[#ffb68d] focus:outline-none"
+                >
+                  <option value="off">Off</option>
+                  <option value="on">On</option>
+                </select>
               </div>
+
+              {/* Atmospheric Condition */}
+              <div className="flex flex-col gap-1.5">
+                <label className="font-['JetBrains_Mono'] text-[10px] text-[#ddc1b3] uppercase tracking-wider">
+                  Atmospheric Condition
+                </label>
+                <select
+                  value={config.disturbances.atmosphericCondition}
+                  onChange={(e) => handleDisturbanceChange('atmosphericCondition', e.target.value as AtmosphericCondition)}
+                  className="w-full bg-[#323538] border border-[#564338] text-[#e0e3e6] font-['JetBrains_Mono'] text-xs p-2.5 rounded focus:border-[#ffb68d] focus:outline-none"
+                >
+                  <option value="clear">Clear</option>
+                  <option value="haze">Haze</option>
+                  <option value="fog">Fog</option>
+                  <option value="rain">Rain</option>
+                  <option value="lowLight">Low Light</option>
+                </select>
+              </div>
+
+              {/* Image Noise Types (multi-select) */}
+              <div className="flex flex-col gap-1.5">
+                <label className="font-['JetBrains_Mono'] text-[10px] text-[#ddc1b3] uppercase tracking-wider">
+                  Image Noise Types
+                </label>
+                <div className="flex flex-col gap-2">
+                  {(['saltPepper', 'gaussian', 'poisson'] as ImageNoiseType[]).map((type) => (
+                    <label key={type} className="flex items-center gap-2 cursor-pointer group">
+                      <div
+                        onClick={() => handleImageNoiseToggle(type)}
+                        className={`flex items-center justify-center w-3.5 h-3.5 rounded-sm border ${
+                          (config.disturbances.imageNoiseTypes || []).includes(type)
+                            ? 'border-[#ffb68d] bg-[#ffb68d] text-[#532200]'
+                            : 'border-[#564338] bg-[#323538] group-hover:border-[#ffb68d]'
+                        } transition-colors`}
+                      >
+                        {(config.disturbances.imageNoiseTypes || []).includes(type) && (
+                          <span className="material-symbols-outlined text-[11px] font-bold">check</span>
+                        )}
+                      </div>
+                      <span className="text-[#e0e3e6] font-['JetBrains_Mono'] text-[10px] uppercase">
+                        {type === 'saltPepper' ? 'Salt & Pepper' : type === 'gaussian' ? 'Gaussian' : 'Poisson'}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Salt & Pepper Probability */}
+              {(config.disturbances.imageNoiseTypes || []).includes('saltPepper') && (
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex justify-between items-center">
+                    <label className="font-['JetBrains_Mono'] text-[10px] text-[#ddc1b3] uppercase tracking-wider">
+                      S&P Probability
+                    </label>
+                    <span className="font-['JetBrains_Mono'] text-[11px] text-[#42e09c] font-bold">
+                      {(config.disturbances.saltPepperProbability * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={config.disturbances.saltPepperProbability * 100}
+                    onChange={(e) => handleDisturbanceChange('saltPepperProbability', parseInt(e.target.value) / 100)}
+                    className="mt-1"
+                  />
+                </div>
+              )}
+
+              {/* Gaussian Std Dev */}
+              {(config.disturbances.imageNoiseTypes || []).includes('gaussian') && (
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex justify-between items-center">
+                    <label className="font-['JetBrains_Mono'] text-[10px] text-[#ddc1b3] uppercase tracking-wider">
+                      Gaussian Std Dev
+                    </label>
+                    <span className="font-['JetBrains_Mono'] text-[11px] text-[#42e09c] font-bold">
+                      {config.disturbances.gaussianStdDevPx}px
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="20"
+                    value={config.disturbances.gaussianStdDevPx}
+                    onChange={(e) => handleDisturbanceChange('gaussianStdDevPx', parseInt(e.target.value))}
+                    className="mt-1"
+                  />
+                  <div className="flex justify-between font-['JetBrains_Mono'] text-[9px] text-[#ddc1b3]/60 uppercase">
+                    <span>0px</span>
+                    <span>20px (max)</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Poisson Strength */}
+              {(config.disturbances.imageNoiseTypes || []).includes('poisson') && (
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex justify-between items-center">
+                    <label className="font-['JetBrains_Mono'] text-[10px] text-[#ddc1b3] uppercase tracking-wider">
+                      Poisson Strength
+                    </label>
+                    <span className="font-['JetBrains_Mono'] text-[11px] text-[#42e09c] font-bold">
+                      {config.disturbances.poissonStrength.toFixed(1)}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="10"
+                    step="0.5"
+                    value={config.disturbances.poissonStrength}
+                    onChange={(e) => handleDisturbanceChange('poissonStrength', parseFloat(e.target.value))}
+                    className="mt-1"
+                  />
+                </div>
+              )}
+
+              {/* Camera Jitter */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex justify-between items-center">
+                  <label className="font-['JetBrains_Mono'] text-[10px] text-[#ddc1b3] uppercase tracking-wider">
+                    Camera Jitter
+                  </label>
+                  <span className="font-['JetBrains_Mono'] text-[11px] text-[#42e09c] font-bold">
+                    ±{config.disturbances.cameraJitterMaxPxPerFrame}px
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="20"
+                  value={config.disturbances.cameraJitterMaxPxPerFrame}
+                  onChange={(e) => handleDisturbanceChange('cameraJitterMaxPxPerFrame', parseInt(e.target.value))}
+                  className="mt-1"
+                />
+                <div className="flex justify-between font-['JetBrains_Mono'] text-[9px] text-[#ddc1b3]/60 uppercase">
+                  <span>Off</span>
+                  <span>±20px (max)</span>
+                </div>
+              </div>
+
+              {/* Platform Motion */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex justify-between items-center">
+                  <label className="font-['JetBrains_Mono'] text-[10px] text-[#ddc1b3] uppercase tracking-wider">
+                    Platform Motion
+                  </label>
+                  <span className="font-['JetBrains_Mono'] text-[11px] text-[#42e09c] font-bold">
+                    {config.disturbances.platformMotionEnabled ? 'ON' : 'OFF'}
+                  </span>
+                </div>
+                <select
+                  value={config.disturbances.platformMotionEnabled ? 'on' : 'off'}
+                  onChange={(e) => handleDisturbanceChange('platformMotionEnabled', e.target.value === 'on')}
+                  className="w-full bg-[#323538] border border-[#564338] text-[#e0e3e6] font-['JetBrains_Mono'] text-xs p-2.5 rounded focus:border-[#ffb68d] focus:outline-none"
+                >
+                  <option value="off">Off</option>
+                  <option value="on">On</option>
+                </select>
+              </div>
+
+              {config.disturbances.platformMotionEnabled && (
+                <>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="font-['JetBrains_Mono'] text-[10px] text-[#ddc1b3] uppercase tracking-wider">
+                      Motion Type
+                    </label>
+                    <select
+                      value={config.disturbances.platformMotionType}
+                      onChange={(e) => handleDisturbanceChange('platformMotionType', e.target.value as PlatformMotionType)}
+                      className="w-full bg-[#323538] border border-[#564338] text-[#e0e3e6] font-['JetBrains_Mono'] text-xs p-2.5 rounded focus:border-[#ffb68d] focus:outline-none"
+                    >
+                      <option value="linear">Linear (Default)</option>
+                      <option value="circular">Circular</option>
+                      <option value="random">Random</option>
+                      <option value="spiral">Spiral</option>
+                      <option value="figure8">Figure of 8</option>
+                    </select>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex justify-between items-center">
+                      <label className="font-['JetBrains_Mono'] text-[10px] text-[#ddc1b3] uppercase tracking-wider">
+                        Motion Max Px/Frame
+                      </label>
+                      <span className="font-['JetBrains_Mono'] text-[11px] text-[#42e09c] font-bold">
+                        ±{config.disturbances.platformMotionMaxPxPerFrame}px
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="20"
+                      value={config.disturbances.platformMotionMaxPxPerFrame}
+                      onChange={(e) => handleDisturbanceChange('platformMotionMaxPxPerFrame', parseInt(e.target.value))}
+                      className="mt-1"
+                    />
+                    <div className="flex justify-between font-['JetBrains_Mono'] text-[9px] text-[#ddc1b3]/60 uppercase">
+                      <span>Off</span>
+                      <span>±20px (max)</span>
+                    </div>
+                  </div>
+                </>
+              )}
 
               {/* Global Disturbance Intensity Panel */}
               <div className="flex flex-col gap-2 mt-2 p-3.5 border border-[#564338] bg-[#191c1e] rounded">

@@ -8,6 +8,7 @@ interface PerformanceViewProps {
   config: SimulationConfig;
   completedRuns: CompletedAlgorithmRun[];
   benchmarkContext: BenchmarkContext;
+  simulationSessionId: number;
 }
 
 const ALGORITHMS: TrackingAlgorithm[] = ['AI Centroid', 'Kalman Predictive', 'Deep Beacon'];
@@ -18,7 +19,7 @@ const ALGO_COLORS: Record<TrackingAlgorithm, string> = {
   'Deep Beacon': '#65fdb6',
 };
 
-export const PerformanceView: React.FC<PerformanceViewProps> = ({ stats, config, completedRuns, benchmarkContext }) => {
+export const PerformanceView: React.FC<PerformanceViewProps> = ({ stats, config, completedRuns, benchmarkContext, simulationSessionId }) => {
   const [showReportModal, setShowReportModal] = useState<boolean>(false);
   const [selectedRunAlgo, setSelectedRunAlgo] = useState<TrackingAlgorithm | null>(null);
 
@@ -26,6 +27,11 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({ stats, config,
   const runDisplayName = completedRuns.length > 0
     ? completedRuns[completedRuns.length - 1].configDisplayName
     : config.configDisplayName || config.name;
+
+  // Check if all completed runs used the same config + seed (directly comparable)
+  const allRunsSameConfig = completedRuns.length > 1 && completedRuns.every(
+    r => r.config.id === completedRuns[0].config.id && r.seed === completedRuns[0].seed
+  );
 
   // Build history for graphing - use completed runs' telemetry
   const getRunHistory = (algo: TrackingAlgorithm): TelemetryPoint[] => {
@@ -192,7 +198,7 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({ stats, config,
                         <span className="text-[#ddc1b3] font-bold">{metrics.avgFps.toFixed(1)}</span>
                       </div>
                       <div className="mt-2 pt-2 border-t border-[#564338]/30 font-['JetBrains_Mono'] text-[9px] text-[#a58c7f]">
-                        Run: {new Date(run.timestamp).toLocaleTimeString()}
+                        Run: {new Date(run.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }) + ' IST'}
                         {run.seed !== undefined && <span className="ml-2">Seed: {run.seed}</span>}
                       </div>
                     </div>
@@ -244,10 +250,18 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({ stats, config,
                 <span className="material-symbols-outlined text-[14px] text-[#ff8a3d]">info</span>
                 Actual tracking error measured during live simulation. Lower error indicates closer target tracking.
               </div>
-              <div className="flex items-center gap-2 text-[#ddc1b3]">
-                <span className="material-symbols-outlined text-[14px] text-[#42e09c]">same_config</span>
-                Same configuration + seed for direct algorithm comparison.
-              </div>
+              {allRunsSameConfig && (
+                <div className="flex items-center gap-2 text-[#42e09c]">
+                  <span className="material-symbols-outlined text-[14px]">verified</span>
+                  Same Config &bull; Same Seed — Direct Algorithm Comparison
+                </div>
+              )}
+              {!allRunsSameConfig && completedRuns.length > 1 && (
+                <div className="flex items-center gap-2 text-[#ffb68d]">
+                  <span className="material-symbols-outlined text-[14px]">warning</span>
+                  Different configurations — results not directly comparable
+                </div>
+              )}
             </div>
 
             {/* Three Algorithm Panels */}

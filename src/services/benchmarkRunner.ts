@@ -35,7 +35,16 @@ import {
   TrackingPipelineState,
   PerformanceStats,
   SimulationNoise,
+  BenchmarkScenario,
+  BenchmarkRunResult,
+  BenchmarkSuiteResult,
+  BenchmarkRunMetrics,
 } from '../types';
+import {
+  computeBenchmarkMetrics,
+  evaluateRequirements,
+  findWorstPerformers,
+} from './benchmarkMetrics';
 import {
   initializeTargets,
   updateTargetPositions,
@@ -85,6 +94,12 @@ const SRC_DETECTION_NOISE_EL = 0x5001;
 const SRC_TELEMETRY_FPS = 0x6000;
 const SRC_TELEMETRY_CPU = 0x6001;
 const SRC_TELEMETRY_PROC = 0x6002;
+// Phase 2B sources
+const SRC_SALT_PEPPER = 0x7000;
+const SRC_POISSON = 0x7001;
+const SRC_CAMERA_JITTER_X = 0x7002;
+const SRC_CAMERA_JITTER_Y = 0x7003;
+const SRC_RAIN_STREAK = 0x7004;
 
 function streamSeed(masterSeed: number, sourceId: number, stepIndex: number): number {
   let h = masterSeed ^ (stepIndex * 0x9e3779b9);
@@ -121,6 +136,18 @@ function createSimulationNoise(
     fpsRng: mulberry32(streamSeed(masterSeed, SRC_TELEMETRY_FPS, stepIndex)),
     cpuRng: mulberry32(streamSeed(masterSeed, SRC_TELEMETRY_CPU, stepIndex)),
     procTimeRng: mulberry32(streamSeed(masterSeed, SRC_TELEMETRY_PROC, stepIndex)),
+    // Phase 2B
+    saltPepperRng: mulberry32(streamSeed(masterSeed, SRC_SALT_PEPPER, stepIndex)),
+    poissonRng: gaussianFromRng(
+      mulberry32(streamSeed(masterSeed, SRC_POISSON, stepIndex))
+    ),
+    cameraJitterXRng: gaussianFromRng(
+      mulberry32(streamSeed(masterSeed, SRC_CAMERA_JITTER_X, stepIndex))
+    ),
+    cameraJitterYRng: gaussianFromRng(
+      mulberry32(streamSeed(masterSeed, SRC_CAMERA_JITTER_Y, stepIndex))
+    ),
+    rainStreakRng: mulberry32(streamSeed(masterSeed, SRC_RAIN_STREAK, stepIndex)),
   };
 }
 
@@ -157,7 +184,7 @@ function createInitialCamera(config: SimulationConfig): CameraGimbalState {
     zoom: 1.0,
     panVelocity: 0,
     tiltVelocity: 0,
-    fov: config.cameraFov,
+    fov: config.cameraFovHorizontal || config.cameraFov,
     opticalFilter: true,
     autoTracking: true,
     algorithm: 'AI Centroid',
@@ -221,7 +248,7 @@ function runAlgorithmHeadless(
   const initialPan = camera.pan;
   const initialTilt = camera.tilt;
 
-  let pipeline: TrackingPipelineState = initTrackingPipeline(algorithm, initialPan, initialTilt);
+  let pipeline: TrackingPipelineState = initTrackingPipeline(algorithm, initialPan, initialTilt, settings);
   let currentCamera = { ...camera };
   const telemetryHistory: TelemetryPoint[] = [];
 
@@ -475,6 +502,168 @@ export function benchmarkToCsv(result: BenchmarkResult): string {
       (sr.score * 100).toFixed(1),
     ]).join(',');
   });
+
+  return [headers.join(','), ...rows].join('\n');
+}
+
+// ═══════════════════════════════════════════════════════════
+// Phase 3A: Benchmark Suite Execution
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Run a single scenario against a single algorithm headlessly.
+ * Returns the full run result including metrics and PASS/FAIL evaluation.
+ */
+export function runBenchmarkScenarioRun(
+  scenario: BenchmarkScenario,
+  algorithm: TrackingAlgorithm,
+  settings: AppSettings
+): BenchmarkRunResult {
+  const benchmarkConfig: BenchmarkConfig = {
+    simulationConfig: scenario.config,
+    settings,
+    seed: scenario.seed,
+    algorithms: [algorithm],
+  };
+
+  const result = runBenchmark(benchmarkConfig);
+  const algoResult = result.comparison.results.find(r => r.algorithm === algorithm);
+
+  if (!algoResult) {
+    return {
+      scenarioId: scenario.id,
+      scenarioName: scenario.name,
+      algorithm,
+      seed: scenario.seed,
+      metrics: computeBenchmarkMetrics([], scenario.config),
+      passFail: evaluateRequirements(computeBenchmarkMetrics([], scenario.config)),
+      overallPass: false,
+      telemetryHistory: [],
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  const metrics = computeBenchmarkMetrics(algoResult.telemetryHistory, scenario.config);
+  const passFail = evaluateRequirements(metrics);
+  const overallPass = passFail.every(pf => pf.passed);
+
+  return {
+    scenarioId: scenario.id,
+    scenarioName: scenario.name,
+    algorithm,
+    seed: scenario.seed,
+    metrics,
+    passFail,
+    overallPass,
+    telemetryHistory: algoResult.telemetryHistory,
+    timestamp: new Date().toISOString(),
+    trackability: scenario.trackability,
+    initialVisibility: scenario.initialVisibility,
+    category: scenario.category,
+  };
+}
+
+/**
+ * Run a full benchmark suite: multiple scenarios × multiple algorithms.
+ *
+ * Each scenario+algorithm combination gets the same seed, ensuring fair comparison.
+ * Deterministic simulation metrics are reproducible; FPS is machine-dependent.
+ */
+export function runBenchmarkSuite(
+  scenarios: BenchmarkScenario[],
+  algorithms: TrackingAlgorithm[],
+  settings: AppSettings,
+  onProgress?: (scenarioIdx: number, algoIdx: number, total: number) => void
+): BenchmarkSuiteResult {
+  const runs: BenchmarkRunResult[] = [];
+  const total = scenarios.length * algorithms.length;
+  let idx = 0;
+
+  for (const scenario of scenarios) {
+    for (const algorithm of algorithms) {
+      onProgress?.(scenarios.indexOf(scenario), algorithms.indexOf(algorithm), total);
+      const run = runBenchmarkScenarioRun(scenario, algorithm, settings);
+      runs.push(run);
+      idx++;
+    }
+  }
+
+  const worstPerScenario = findWorstPerformers(
+    runs.map(r => ({ scenarioId: r.scenarioId, algorithm: r.algorithm, metrics: r.metrics }))
+  );
+
+  return {
+    runs,
+    worstPerScenario,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+// ── Phase 3A CSV Export ──
+
+export function benchmarkSuiteToCsv(suite: BenchmarkSuiteResult): string {
+  const headers = [
+    'Scenario',
+    'Algorithm',
+    'Seed',
+    'Duration(s)',
+    'FPS',
+    'Avg Error(px)',
+    'RMSE(px)',
+    'Max Error(px)',
+    'Loss(%)',
+    'Acquisition(s)',
+    'Reacquisition(s)',
+    'Lock Retention(%)',
+    'Overall Status',
+  ];
+
+  const rows = suite.runs.map(run => sanitizeCsvRow([
+    run.scenarioName,
+    run.algorithm,
+    run.seed.toString(),
+    run.metrics.simulationDurationSec.toFixed(1),
+    run.metrics.averageFps.toFixed(1),
+    run.metrics.averageTrackingErrorPx.toFixed(2),
+    run.metrics.rmseTrackingErrorPx.toFixed(2),
+    run.metrics.maxTrackingErrorPx.toFixed(2),
+    run.metrics.targetLossPercent.toFixed(1),
+    run.metrics.acquisitionTimeSec < Infinity ? run.metrics.acquisitionTimeSec.toFixed(2) : 'N/A',
+    run.metrics.reacquisitionTimeSec < Infinity ? run.metrics.reacquisitionTimeSec.toFixed(2) : 'N/A',
+    run.metrics.lockRetentionPercent.toFixed(1),
+    run.overallPass ? 'PASS' : 'FAIL',
+  ]).join(','));
+
+  return [headers.join(','), ...rows].join('\n');
+}
+
+export function benchmarkSuiteDetailCsv(suite: BenchmarkSuiteResult): string {
+  const headers = [
+    'Scenario',
+    'Algorithm',
+    'Requirement',
+    'Measured',
+    'Threshold',
+    'Unit',
+    'Status',
+    'Message',
+  ];
+
+  const rows: string[] = [];
+  for (const run of suite.runs) {
+    for (const pf of run.passFail) {
+      rows.push(sanitizeCsvRow([
+        run.scenarioName,
+        run.algorithm,
+        pf.requirementName,
+        pf.measuredValue < Infinity ? pf.measuredValue.toFixed(3) : 'N/A',
+        pf.threshold.toString(),
+        pf.unit,
+        pf.passed ? 'PASS' : 'FAIL',
+        pf.message,
+      ]).join(','));
+    }
+  }
 
   return [headers.join(','), ...rows].join('\n');
 }

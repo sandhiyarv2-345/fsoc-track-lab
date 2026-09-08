@@ -66,6 +66,11 @@ function createNoNoise(): SimulationNoise {
     fpsRng: () => 0.5,
     cpuRng: () => 0.5,
     procTimeRng: () => 0.5,
+    saltPepperRng: () => 0.5,
+    poissonRng: () => 0,
+    cameraJitterXRng: () => 0,
+    cameraJitterYRng: () => 0,
+    rainStreakRng: () => 1.0,
   };
 }
 
@@ -279,7 +284,7 @@ function testFovProjection(): void {
 function testSensorModelFov(): void {
   section('TEST 7 — SENSOR MODEL FOV CHECK');
 
-  const config = { ...DEFAULT_CONFIG, cameraFov: 20 };
+  const config = { ...DEFAULT_CONFIG, cameraFov: 20, cameraFovHorizontal: 20, cameraFovVertical: 20 };
   const camera: CameraGimbalState = {
     pan: 0, tilt: 0, zoom: 1.0, panVelocity: 0, tiltVelocity: 0,
     fov: 20, opticalFilter: true, autoTracking: true, algorithm: 'AI Centroid',
@@ -354,7 +359,7 @@ function testAntiWindup(): void {
 function testGroundTruthLeakage(): void {
   section('TEST 10 — GROUND TRUTH LEAKAGE CHECK');
 
-  const config = { ...DEFAULT_CONFIG };
+  const config = { ...DEFAULT_CONFIG, cameraFov: 20, cameraFovHorizontal: 20, cameraFovVertical: 20 };
   const settings = { ...DEFAULT_SETTINGS };
   const noise = createNoNoise();
 
@@ -380,8 +385,9 @@ function testGroundTruthLeakage(): void {
   assert(sensorFrame.beaconPresent, 'Sensor frame detects beacon via projection');
 
   // Verify: detection result comes from centroid calculation, not ground truth
-  const effectiveFov = config.cameraFov / camera.zoom;
-  const detection = detectBeacon(sensorFrame, 'AI Centroid', effectiveFov, 0, noise);
+  const effectiveFov = config.cameraFovHorizontal / camera.zoom;
+  const detection = detectBeacon(sensorFrame, 'AI Centroid', effectiveFov, 0, noise,
+    config.cameraFovHorizontal / camera.zoom, config.cameraFovVertical / camera.zoom);
   assert(detection.detected, 'Detection result comes from sensor frame processing');
 
   // Verify: the detection's measured angles are relative to boresight (not ground truth)
@@ -408,7 +414,7 @@ function testGroundTruthLeakage(): void {
 function testAlgorithmDifferentiation(): void {
   section('TEST 11 — ALGORITHM DIFFERENTIATION');
 
-  const config = { ...DEFAULT_CONFIG, disturbances: { sensorNoise: true, vibration: true, atmosphericTurbulence: true, motionJitter: true, intensity: 80 } };
+  const config = { ...DEFAULT_CONFIG, disturbances: { sensorNoise: true, vibration: true, atmosphericTurbulence: true, motionJitter: true, intensity: 80, imageNoiseTypes: [] as any[], saltPepperProbability: 0.10, gaussianStdDevPx: 0, poissonStrength: 0, cameraJitterMaxPxPerFrame: 0, atmosphericCondition: 'clear' as const, platformMotionEnabled: false, platformMotionType: 'linear' as const, platformMotionMaxPxPerFrame: 0 } };
   const settings = { ...DEFAULT_SETTINGS };
   const noise = createNoNoise();
 
@@ -545,7 +551,7 @@ function testDtHandling(): void {
 function testBeaconDetectorCentroid(): void {
   section('TEST 15 — BEACON DETECTOR CENTROID');
 
-  const config = { ...DEFAULT_CONFIG };
+  const config = { ...DEFAULT_CONFIG, cameraFov: 20, cameraFovHorizontal: 20, cameraFovVertical: 20 };
   const camera: CameraGimbalState = {
     pan: 0, tilt: 0, zoom: 1.0, panVelocity: 0, tiltVelocity: 0,
     fov: 20, opticalFilter: true, autoTracking: true, algorithm: 'AI Centroid',
@@ -575,8 +581,9 @@ function testBeaconDetectorCentroid(): void {
   assertNear(frameTrueCenter.beaconPixelX, 320, 5, `True center beacon pixel X = 320 (got ${frameTrueCenter.beaconPixelX.toFixed(1)})`);
   assertNear(frameTrueCenter.beaconPixelY, 240, 5, `True center beacon pixel Y = 240 (got ${frameTrueCenter.beaconPixelY.toFixed(1)})`);
 
-  const effectiveFov = config.cameraFov / camera.zoom;
-  const detCenter = detectBeacon(frameCenter, 'AI Centroid', effectiveFov, 0, noise);
+  const effectiveFov = config.cameraFovHorizontal / camera.zoom;
+  const detCenter = detectBeacon(frameCenter, 'AI Centroid', effectiveFov, 0, noise,
+    config.cameraFovHorizontal / camera.zoom, config.cameraFovVertical / camera.zoom);
   assert(detCenter.detected, 'Detection succeeds for centered beacon');
   assertNear(detCenter.measuredAz, 0, 0.5, `Detected AZ near 0° (got ${detCenter.measuredAz.toFixed(3)}°)`);
   assertNear(detCenter.measuredEl, 9.46, 1.0, `Detected EL near 9.46° (got ${detCenter.measuredEl.toFixed(3)}°)`);
