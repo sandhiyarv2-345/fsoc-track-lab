@@ -22,12 +22,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   activeConfig,
   activeAlgorithm,
 }) => {
-  const [utcTime, setUtcTime] = useState<string>('');
+  const [localTime, setLocalTime] = useState<string>('');
 
   useEffect(() => {
     const update = () => {
       const now = new Date();
-      setUtcTime(now.toISOString().substring(11, 19) + ' UTC');
+      setLocalTime(now.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }) + ' IST');
     };
     update();
     const interval = setInterval(update, 1000);
@@ -48,7 +48,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
         <div className="hidden md:flex items-center gap-2 font-['JetBrains_Mono'] text-sm text-[#c1c7d3]">
           <span className="material-symbols-outlined text-sm opacity-70">schedule</span>
-          <span id="system-time">{utcTime || '16:14:15 UTC'}</span>
+          <span id="system-time">{localTime || '00:00:00 IST'}</span>
         </div>
       </div>
 

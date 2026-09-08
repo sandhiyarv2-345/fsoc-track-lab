@@ -33,7 +33,8 @@ export const CameraView: React.FC<CameraViewProps> = ({
   const [opticalFilter, setOpticalFilter] = useState<boolean>(true);
 
   const beaconTarget = targets.find((t) => t.isBeacon) || targets[0];
-  const effectiveFov = (config.cameraFov || 20) / zoomLevel;
+  const effectiveHfov = ((config.cameraFovHorizontal || config.cameraFov) || 4) / zoomLevel;
+  const effectiveVfov = ((config.cameraFovVertical || config.cameraFov * 0.75) || 3) / zoomLevel;
 
   const handleAlgorithmChange = (algo: TrackingAlgorithm) => {
     setCamera((prev) => ({ ...prev, algorithm: algo }));
@@ -78,7 +79,8 @@ export const CameraView: React.FC<CameraViewProps> = ({
 
       const cx = width / 2;
       const cy = height / 2;
-      const fov = effectiveFov;
+      const fovH = effectiveHfov;
+      const fovV = effectiveVfov;
 
       // ── Sensor Grid ──
       ctx.strokeStyle = opticalFilter ? 'rgba(66, 224, 156, 0.06)' : 'rgba(255, 182, 141, 0.06)';
@@ -93,11 +95,11 @@ export const CameraView: React.FC<CameraViewProps> = ({
 
       // ── FOV Boundary Rectangle ──
       const fovW = width * 0.92;
-      const fovH = height * 0.92;
+      const fovHrect = height * 0.92 * (Math.tan(fovV * Math.PI / 360) / Math.tan(fovH * Math.PI / 360));
       ctx.strokeStyle = 'rgba(86, 67, 56, 0.25)';
       ctx.lineWidth = 1;
       ctx.setLineDash([8, 8]);
-      ctx.strokeRect(cx - fovW / 2, cy - fovH / 2, fovW, fovH);
+      ctx.strokeRect(cx - fovW / 2, cy - fovHrect / 2, fovW, fovHrect);
       ctx.setLineDash([]);
 
       // ── Center Reticle ──
@@ -154,10 +156,12 @@ export const CameraView: React.FC<CameraViewProps> = ({
       targets.forEach((t) => {
         const dAz = t.azimuth - camera.pan;
         const dEl = t.elevation - camera.tilt;
-        const halfFovRad = (fov / 2) * Math.PI / 180;
-        const tanHalfFov = Math.tan(halfFovRad);
-        const normAz = Math.tan(dAz * Math.PI / 180) / tanHalfFov;
-        const normEl = Math.tan(dEl * Math.PI / 180) / tanHalfFov;
+        const halfHFovRad = (fovH / 2) * Math.PI / 180;
+        const halfVFovRad = (fovV / 2) * Math.PI / 180;
+        const tanHalfHFov = Math.tan(halfHFovRad);
+        const tanHalfVFov = Math.tan(halfVFovRad);
+        const normAz = Math.tan(dAz * Math.PI / 180) / tanHalfHFov;
+        const normEl = Math.tan(dEl * Math.PI / 180) / tanHalfVFov;
         const px = cx + normAz * (width / 2);
         const py = cy - normEl * (height / 2);
         const isVisible = px >= 0 && px <= width && py >= 0 && py <= height;
@@ -235,8 +239,8 @@ export const CameraView: React.FC<CameraViewProps> = ({
       if (telemetry.totalError > 0.3) {
         const errAz = camera.pan - (beaconTarget?.azimuth ?? 0);
         const errEl = camera.tilt - (beaconTarget?.elevation ?? 0);
-        const errPx = (errAz / (fov / 2)) * (width / 2);
-        const errPy = -(errEl / (fov / 2)) * (height / 2);
+        const errPx = (errAz / (fovH / 2)) * (width / 2);
+        const errPy = -(errEl / (fovV / 2)) * (height / 2);
         const errLen = Math.sqrt(errPx * errPx + errPy * errPy);
         if (errLen > 4) {
           ctx.strokeStyle = 'rgba(255, 180, 171, 0.4)';
@@ -283,7 +287,7 @@ export const CameraView: React.FC<CameraViewProps> = ({
     render();
     animId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animId);
-  }, [targets, camera, telemetry, config, zoomLevel, opticalFilter, effectiveFov, beaconTarget]);
+  }, [targets, camera, telemetry, config, zoomLevel, opticalFilter, effectiveHfov, effectiveVfov, beaconTarget]);
 
   return (
     <div className="flex-1 flex flex-col md:flex-row h-full overflow-hidden mt-14 md:mt-0 tech-grid-bg relative select-none pb-12">
@@ -340,7 +344,7 @@ export const CameraView: React.FC<CameraViewProps> = ({
               <span className="text-xs text-[#e0e3e6] font-mono">T+ {telemetry.formattedTime}:14.2</span>
             </div>
             <div className="flex items-center gap-2 bg-[#101416]/80 backdrop-blur-sm px-3 py-1.5 rounded border border-[#564338]/40 text-xs text-[#ddc1b3]">
-              <span>FOV: {effectiveFov.toFixed(1)}°</span>
+              <span>FOV: {effectiveHfov.toFixed(1)}° × {effectiveVfov.toFixed(1)}°</span>
               <span className="text-[#564338]">|</span>
               <span className="text-[#42e09c]">1550nm IR FILTER ON</span>
             </div>

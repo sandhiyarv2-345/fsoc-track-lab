@@ -19,9 +19,9 @@ export const World3DView: React.FC<World3DViewProps> = ({
   isSimRunning,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [orbitAngleX, setOrbitAngleX] = useState(-15);
-  const [orbitAngleY, setOrbitAngleY] = useState(0);
-  const [zoomScale, setZoomScale] = useState(1.0);
+  const [orbitAngleX, setOrbitAngleX] = useState(-20);
+  const [orbitAngleY, setOrbitAngleY] = useState(5);
+  const [zoomScale, setZoomScale] = useState(1.2);
   const [showTrails, setShowTrails] = useState(true);
   const [showWireframe, setShowWireframe] = useState(true);
   const isDragging = useRef(false);
@@ -63,41 +63,112 @@ export const World3DView: React.FC<World3DViewProps> = ({
       ctx.clearRect(0, 0, width, height);
 
       const cx = width / 2;
-      const cy = height / 2 + 80;
+      const cy = height / 2 + 40;
       const radX = (orbitAngleX * Math.PI) / 180;
       const radY = (orbitAngleY * Math.PI) / 180;
+      const cosOY = Math.cos(radY), sinOY = Math.sin(radY);
+      const cosOX = Math.cos(radX), sinOX = Math.sin(radX);
 
-      const project = (x: number, y: number, z: number) => {
-        const cosY = Math.cos(radY);
-        const sinY = Math.sin(radY);
-        const x1 = x * cosY - z * sinY;
-        const z1 = x * sinY + z * cosY;
-        const cosX = Math.cos(radX);
-        const sinX = Math.sin(radX);
-        const y2 = y * cosX - z1 * sinX;
-        const z2 = y * sinX + z1 * cosX;
-        const fovDepth = 900 * zoomScale;
-        const depth = z2 + 1300;
-        if (depth <= 10) return { px: cx, py: cy, scale: 0, visible: false };
-        const scale = fovDepth / depth;
+      const beaconPos = beaconTarget
+        ? { x: beaconTarget.x, y: beaconTarget.y, z: beaconTarget.z }
+        : { x: 0, y: 300, z: 1200 };
+
+      // ── Phase 1: Raw projection (before focal-length fitting) ──
+      // Uses a temporary focal so we can measure projected positions,
+      // then we recompute a final focal that keeps everything on screen.
+      const DEPTH_OFFSET = 1400;
+      const rawProject = (wx: number, wy: number, wz: number, f: number) => {
+        const x1 = wx * cosOY - wz * sinOY;
+        const z1 = wx * sinOY + wz * cosOY;
+        const y2 = wy * cosOX - z1 * sinOX;
+        const z2 = wy * sinOX + z1 * cosOX;
+        const depth = z2 + DEPTH_OFFSET;
+        if (depth <= 50) return { px: cx, py: cy, s: 0, vis: false };
+        const s = f / depth;
+        return { px: cx + x1 * s, py: cy - y2 * s, s, vis: true };
+      };
+
+      // Probe key world points with a reference focal
+      const REF_F = 900;
+      const camProj = rawProject(0, 100, 0, REF_F);
+      const bcnProj = rawProject(beaconPos.x, beaconPos.y, beaconPos.z, REF_F);
+      // Optical-axis tip (for framing)
+      const panRad = (camera.pan * Math.PI) / 180;
+      const tiltRad = (camera.tilt * Math.PI) / 180;
+      const sinP = Math.sin(panRad), cosP = Math.cos(panRad);
+      const sinT = Math.sin(tiltRad), cosT = Math.cos(tiltRad);
+      const distToBeacon = beaconTarget
+        ? Math.sqrt(beaconTarget.x ** 2 + (beaconTarget.y - 100) ** 2 + beaconTarget.z ** 2)
+        : 1200;
+      const visAxisLen = Math.min(Math.max(distToBeacon * 0.85, 200), 600);
+      const axProj = rawProject(
+        sinP * cosT * visAxisLen,
+        100 + sinT * visAxisLen,
+        cosP * cosT * visAxisLen,
+        REF_F,
+      );
+      // Frustum far-cap corners (for framing)
+      const hFovRad = (((config.cameraFovHorizontal || config.cameraFov) || 4) * Math.PI) / 180;
+      const vFovRad = (((config.cameraFovVertical || config.cameraFov * 0.75) || 3) * Math.PI) / 180;
+      const visConeRange = 350;
+      const visConeHW = Math.tan(hFovRad / 2) * visConeRange;
+      const visConeHH = Math.tan(vFovRad / 2) * visConeRange;
+      const localCorners = [
+        { x: -visConeHW, y: visConeHH, z: visConeRange },
+        { x: visConeHW, y: visConeHH, z: visConeRange },
+        { x: visConeHW, y: -visConeHH, z: visConeRange },
+        { x: -visConeHW, y: -visConeHH, z: visConeRange },
+      ];
+      const cornerProjs = localCorners.map((pt) => {
+        const tx = pt.x;
+        const ty = pt.y * cosT + pt.z * sinT;
+        const tz = -pt.y * sinT + pt.z * cosT;
+        const rx = tx * cosP + tz * sinP;
+        const ry = ty;
+        const rz = -tx * sinP + tz * cosP;
+        return rawProject(rx, ry + 100, rz, REF_F);
+      });
+
+      // ── Phase 2: Compute focal that fits all probes inside viewport ──
+      const probes = [camProj, bcnProj, axProj, ...cornerProjs].filter((p) => p.vis);
+      const padX = width * 0.13;
+      const padY = height * 0.15;
+      let maxRatio = 1;
+      for (const p of probes) {
+        const dx = Math.abs(p.px - cx);
+        const dy = Math.abs(p.py - cy);
+        if (dx > 1) maxRatio = Math.max(maxRatio, (dx * zoomScale) / (width / 2 - padX));
+        if (dy > 1) maxRatio = Math.max(maxRatio, (dy * zoomScale) / (height / 2 - padY));
+      }
+      const FOCAL = Math.max(300, Math.min(2000, REF_F / maxRatio));
+
+      // ── Phase 3: Final project with fitted focal ──
+      const project = (wx: number, wy: number, wz: number) => {
+        const x1 = wx * cosOY - wz * sinOY;
+        const z1 = wx * sinOY + wz * cosOY;
+        const y2 = wy * cosOX - z1 * sinOX;
+        const z2 = wy * sinOX + z1 * cosOX;
+        const depth = z2 + DEPTH_OFFSET;
+        if (depth <= 50) return { px: cx, py: cy, scale: 0, visible: false };
+        const scale = FOCAL / depth;
         return { px: cx + x1 * scale, py: cy - y2 * scale, scale, visible: true };
       };
 
-      // 1. Perspective Grid
+      // 1. Perspective Grid (ground plane Y=0)
       ctx.lineWidth = 1;
       ctx.strokeStyle = '#26303B';
-      const gridSize = 1600;
-      const step = 200;
-      for (let gx = -gridSize; gx <= gridSize; gx += step) {
-        const p1 = project(gx, 0, -gridSize * 0.2);
-        const p2 = project(gx, 0, gridSize * 1.5);
+      const gridExtent = Math.max(800, Math.abs(beaconPos.z) * 1.2, 1600);
+      const step = Math.max(100, Math.round(gridExtent / 8 / 50) * 50);
+      for (let gx = -gridExtent; gx <= gridExtent; gx += step) {
+        const p1 = project(gx, 0, -gridExtent * 0.15);
+        const p2 = project(gx, 0, gridExtent * 1.1);
         if (p1.visible && p2.visible) {
           ctx.beginPath(); ctx.moveTo(p1.px, p1.py); ctx.lineTo(p2.px, p2.py); ctx.stroke();
         }
       }
-      for (let gz = -gridSize * 0.2; gz <= gridSize * 1.5; gz += step) {
-        const p1 = project(-gridSize, 0, gz);
-        const p2 = project(gridSize, 0, gz);
+      for (let gz = -gridExtent * 0.15; gz <= gridExtent * 1.1; gz += step) {
+        const p1 = project(-gridExtent, 0, gz);
+        const p2 = project(gridExtent, 0, gz);
         if (p1.visible && p2.visible) {
           ctx.beginPath(); ctx.moveTo(p1.px, p1.py); ctx.lineTo(p2.px, p2.py); ctx.stroke();
         }
@@ -113,22 +184,18 @@ export const World3DView: React.FC<World3DViewProps> = ({
         ctx.strokeStyle = '#26303B';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(groundScreen.px, groundScreen.py, 36 * groundScreen.scale, 0, Math.PI * 2);
+        ctx.arc(groundScreen.px, groundScreen.py, 42, 0, Math.PI * 2);
         ctx.fill(); ctx.stroke();
 
         // Base tick marks (compass reference)
         ctx.strokeStyle = '#3A4858';
         ctx.lineWidth = 1.5;
         for (let a = 0; a < 360; a += 45) {
-          const r1 = 38 * groundScreen.scale;
-          const r2 = 46 * groundScreen.scale;
+          const r1 = 44;
+          const r2 = 52;
           const ar = (a * Math.PI) / 180;
-          const tx1 = Math.sin(ar) * r1;
-          const tz1 = Math.cos(ar) * r1;
-          const tx2 = Math.sin(ar) * r2;
-          const tz2 = Math.cos(ar) * r2;
-          const sp1 = project(tx1, 0, tz1);
-          const sp2 = project(tx2, 0, tz2);
+          const sp1 = project(Math.sin(ar) * r1, 0, Math.cos(ar) * r1);
+          const sp2 = project(Math.sin(ar) * r2, 0, Math.cos(ar) * r2);
           if (sp1.visible && sp2.visible) {
             ctx.beginPath(); ctx.moveTo(sp1.px, sp1.py); ctx.lineTo(sp2.px, sp2.py); ctx.stroke();
           }
@@ -136,7 +203,7 @@ export const World3DView: React.FC<World3DViewProps> = ({
 
         // ── Gimbal Tower ──
         ctx.fillStyle = '#0B1017';
-        const tw = 28 * turretScreen.scale;
+        const tw = 32;
         ctx.fillRect(turretScreen.px - tw / 2, turretScreen.py, tw, groundScreen.py - turretScreen.py);
         ctx.strokeStyle = '#26303B'; ctx.lineWidth = 2;
         ctx.strokeRect(turretScreen.px - tw / 2, turretScreen.py, tw, groundScreen.py - turretScreen.py);
@@ -144,20 +211,12 @@ export const World3DView: React.FC<World3DViewProps> = ({
         // Tower center line
         ctx.strokeStyle = '#3A4858'; ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(turretScreen.px, turretScreen.py + 6 * turretScreen.scale);
-        ctx.lineTo(turretScreen.px, groundScreen.py - 4 * groundScreen.scale);
+        ctx.moveTo(turretScreen.px, turretScreen.py + 8);
+        ctx.lineTo(turretScreen.px, groundScreen.py - 6);
         ctx.stroke();
 
         // ── Turret Head (rotates with pan/tilt) ──
-        const panRad = (camera.pan * Math.PI) / 180;
-        const tiltRad = (camera.tilt * Math.PI) / 180;
-
-        // Turret head: flattened ellipsoid projected from pan/tilt
-        const cosP = Math.cos(panRad);
-        const sinP = Math.sin(panRad);
-        const cosT = Math.cos(tiltRad);
-        const sinT = Math.sin(tiltRad);
-        const turretRadius = 24 * turretScreen.scale;
+        const turretRadius = 28;
         const tiltEcc = Math.max(0.25, Math.abs(cosT));
 
         ctx.save();
@@ -173,16 +232,15 @@ export const World3DView: React.FC<World3DViewProps> = ({
         ctx.restore();
 
         // Pan direction arrow on turret head
-        const arrowLen = turretRadius * 0.65;
+        const arrowLen = turretRadius * 0.8;
         const arrowUX = sinP * arrowLen;
         const arrowUZ = cosP * arrowLen;
         const aP1 = project(arrowUX, 100, arrowUZ);
-        const aP2 = project(arrowUX * 1.45, 100, arrowUZ * 1.45);
+        const aP2 = project(arrowUX * 1.6, 100, arrowUZ * 1.6);
         if (aP1.visible && aP2.visible) {
           ctx.strokeStyle = 'rgba(255, 138, 61, 0.7)';
           ctx.lineWidth = 2;
           ctx.beginPath(); ctx.moveTo(aP1.px, aP1.py); ctx.lineTo(aP2.px, aP2.py); ctx.stroke();
-          // Arrowhead
           const dx = aP2.px - aP1.px;
           const dy = aP2.py - aP1.py;
           const len = Math.sqrt(dx * dx + dy * dy);
@@ -203,16 +261,15 @@ export const World3DView: React.FC<World3DViewProps> = ({
           ctx.shadowColor = 'rgba(255, 138, 61, 0.8)';
           ctx.shadowBlur = 10;
           ctx.beginPath();
-          ctx.arc(turretScreen.px, turretScreen.py, 7 * turretScreen.scale, 0, Math.PI * 2);
+          ctx.arc(turretScreen.px, turretScreen.py, 9, 0, Math.PI * 2);
           ctx.fill();
           ctx.shadowBlur = 0;
         }
 
-        // ── Optical Axis Line (turret → look direction) ──
-        const axisLen = 500;
-        const axEndX = Math.sin(panRad) * Math.cos(tiltRad) * axisLen;
-        const axEndY = 100 + Math.sin(tiltRad) * axisLen;
-        const axEndZ = Math.cos(panRad) * Math.cos(tiltRad) * axisLen;
+        // ── Optical Axis Line (from actual camera pan/tilt) ──
+        const axEndX = sinP * cosT * visAxisLen;
+        const axEndY = 100 + sinT * visAxisLen;
+        const axEndZ = cosP * cosT * visAxisLen;
         const axEnd = project(axEndX, axEndY, axEndZ);
         if (axEnd.visible) {
           ctx.strokeStyle = 'rgba(255, 138, 61, 0.6)';
@@ -223,30 +280,36 @@ export const World3DView: React.FC<World3DViewProps> = ({
           ctx.lineTo(axEnd.px, axEnd.py);
           ctx.stroke();
           ctx.setLineDash([]);
-          // Axis endpoint marker
-          ctx.fillStyle = 'rgba(255, 138, 61, 0.5)';
+          ctx.fillStyle = 'rgba(255, 138, 61, 0.6)';
           ctx.beginPath();
-          ctx.arc(axEnd.px, axEnd.py, 3 * axEnd.scale, 0, Math.PI * 2);
+          ctx.arc(axEnd.px, axEnd.py, 4, 0, Math.PI * 2);
           ctx.fill();
         }
 
         // ── FOV Frustum Wireframe Cone ──
         if (showWireframe) {
-          const fovRad = ((config.cameraFov || 20) * Math.PI) / 180;
-          const coneRange = 1200;
-          const coneHW = Math.tan(fovRad / 2) * coneRange;
+          const coneRange = 350;
+          const coneHW = Math.tan(hFovRad / 2) * coneRange;
+          const coneHH = Math.tan(vFovRad / 2) * coneRange;
 
-          const corners = [
-            { x: -coneHW, y: 100 + coneHW * 0.75, z: coneRange },
-            { x:  coneHW, y: 100 + coneHW * 0.75, z: coneRange },
-            { x:  coneHW, y: 100 - coneHW * 0.75, z: coneRange },
-            { x: -coneHW, y: 100 - coneHW * 0.75, z: coneRange },
-          ].map((pt) => {
-            const rz = -pt.x * sinP + pt.z * cosP;
-            const rx =  pt.x * cosP + pt.z * sinP;
-            const ry = pt.y * cosT - rz * sinT;
-            const rz2 = pt.y * sinT + rz * cosT;
-            return project(rx, ry, rz2);
+          // Frustum corners in LOCAL space: Z=forward, X=left/right, Y=up/down (relative to turret center)
+          const frustumLocalCorners = [
+            { x: -coneHW, y:  coneHH, z: coneRange },
+            { x:  coneHW, y:  coneHH, z: coneRange },
+            { x:  coneHW, y: -coneHH, z: coneRange },
+            { x: -coneHW, y: -coneHH, z: coneRange },
+          ];
+
+          // Rotate: tilt first (X-axis, +tilt = up), then pan (Y-axis, +pan = right)
+          // This matches the optical axis convention: (sinP*cosT, sinT, cosP*cosT)
+          const corners = frustumLocalCorners.map((pt) => {
+            const tx = pt.x;
+            const ty = pt.y * cosT + pt.z * sinT;
+            const tz = -pt.y * sinT + pt.z * cosT;
+            const rx = tx * cosP + tz * sinP;
+            const ry = ty;
+            const rz = -tx * sinP + tz * cosP;
+            return project(rx, ry + 100, rz);
           });
 
           // Cone edge rays
@@ -266,17 +329,17 @@ export const World3DView: React.FC<World3DViewProps> = ({
           ctx.closePath(); ctx.fill(); ctx.stroke();
 
           // Mid-range cross-section ring
-          const midCorners = [
-            { x: -coneHW * 0.5, y: 100 + coneHW * 0.375, z: coneRange * 0.5 },
-            { x:  coneHW * 0.5, y: 100 + coneHW * 0.375, z: coneRange * 0.5 },
-            { x:  coneHW * 0.5, y: 100 - coneHW * 0.375, z: coneRange * 0.5 },
-            { x: -coneHW * 0.5, y: 100 - coneHW * 0.375, z: coneRange * 0.5 },
-          ].map((pt) => {
-            const rz = -pt.x * sinP + pt.z * cosP;
-            const rx =  pt.x * cosP + pt.z * sinP;
-            const ry = pt.y * cosT - rz * sinT;
-            const rz2 = pt.y * sinT + rz * cosT;
-            return project(rx, ry, rz2);
+          const midCorners = frustumLocalCorners.map((pt) => {
+            const mx = pt.x * 0.5;
+            const my = pt.y * 0.5;
+            const mz = pt.z * 0.5;
+            const tx = mx;
+            const ty = my * cosT + mz * sinT;
+            const tz = -my * sinT + mz * cosT;
+            const rx = tx * cosP + tz * sinP;
+            const ry = ty;
+            const rz = -tx * sinP + tz * cosP;
+            return project(rx, ry + 100, rz);
           });
           ctx.strokeStyle = 'rgba(255, 138, 61, 0.18)';
           ctx.lineWidth = 1;
@@ -286,14 +349,14 @@ export const World3DView: React.FC<World3DViewProps> = ({
         }
       }
 
-      // 3. Tracking Line: turret → beacon
+      // 3. Tracking Line: turret → beacon (actual target position)
       if (beaconTarget && groundScreen.visible) {
         const bP = project(beaconTarget.x, beaconTarget.y, beaconTarget.z);
         if (bP.visible) {
           const isLocked = telemetry.status === 'LOCKED';
-          ctx.strokeStyle = isLocked ? 'rgba(66, 224, 156, 0.35)' : 'rgba(255, 182, 141, 0.25)';
-          ctx.lineWidth = 1;
-          ctx.setLineDash([3, 6]);
+          ctx.strokeStyle = isLocked ? 'rgba(66, 224, 156, 0.55)' : 'rgba(255, 182, 141, 0.4)';
+          ctx.lineWidth = isLocked ? 2 : 1.5;
+          ctx.setLineDash([5, 5]);
           ctx.beginPath();
           ctx.moveTo(turretScreen.px, turretScreen.py);
           ctx.lineTo(bP.px, bP.py);
@@ -323,33 +386,29 @@ export const World3DView: React.FC<World3DViewProps> = ({
         if (!p.visible) return;
 
         if (t.isBeacon) {
-          // Glow
-          ctx.shadowColor = '#FF8A3D'; ctx.shadowBlur = 15;
+          ctx.shadowColor = '#FF8A3D'; ctx.shadowBlur = 10;
           ctx.fillStyle = '#FF8A3D';
-          ctx.beginPath(); ctx.arc(p.px, p.py, 6 * p.scale, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(p.px, p.py, 4, 0, Math.PI * 2); ctx.fill();
           ctx.shadowBlur = 0;
 
-          // Reticle box
-          const boxSize = 22 * p.scale;
+          const boxSize = 14;
           ctx.strokeStyle = '#FF8A3D'; ctx.lineWidth = 1.5;
           ctx.strokeRect(p.px - boxSize / 2, p.py - boxSize / 2, boxSize, boxSize);
 
-          // Outer ring
           ctx.strokeStyle = 'rgba(255, 138, 61, 0.4)'; ctx.lineWidth = 1;
-          ctx.beginPath(); ctx.arc(p.px, p.py, 20 * p.scale, 0, Math.PI * 2); ctx.stroke();
+          ctx.beginPath(); ctx.arc(p.px, p.py, 12, 0, Math.PI * 2); ctx.stroke();
 
-          // Label
           ctx.fillStyle = '#F2F4F7';
-          ctx.font = `${Math.max(10, Math.round(11 * p.scale))}px JetBrains Mono`;
-          ctx.fillText(`BEACON #${t.id} [${t.range}m]`, p.px + 14 * p.scale, p.py - 10);
+          ctx.font = '11px JetBrains Mono';
+          ctx.fillText(`BEACON #${t.id} [${t.range}m]`, p.px + 12, p.py - 8);
         } else {
           ctx.fillStyle = '#8994A3'; ctx.strokeStyle = '#26303B'; ctx.lineWidth = 1;
           ctx.save(); ctx.translate(p.px, p.py); ctx.rotate(Math.PI / 4);
-          const d = 10 * p.scale;
+          const d = 12;
           ctx.fillRect(-d / 2, -d / 2, d, d); ctx.strokeRect(-d / 2, -d / 2, d, d);
           ctx.restore();
-          ctx.fillStyle = '#8994A3'; ctx.font = '9px JetBrains Mono';
-          ctx.fillText(`T#${t.id}`, p.px + 10, p.py - 4);
+          ctx.fillStyle = '#8994A3'; ctx.font = '10px JetBrains Mono';
+          ctx.fillText(`T#${t.id}`, p.px + 12, p.py - 4);
         }
       });
     };
@@ -416,7 +475,7 @@ export const World3DView: React.FC<World3DViewProps> = ({
             className="w-10 h-10 bg-[#0B1017]/90 backdrop-blur-md border border-[#26303B] rounded flex items-center justify-center text-[#8994A3] hover:text-[#FF8A3D] hover:border-[#FF8A3D] transition-colors cursor-pointer">
             <span className="material-symbols-outlined text-lg">zoom_out</span>
           </button>
-          <button title="Reset View" onClick={() => { setOrbitAngleX(-15); setOrbitAngleY(0); setZoomScale(1.0); }}
+          <button title="Reset View" onClick={() => { setOrbitAngleX(-20); setOrbitAngleY(5); setZoomScale(1.2); }}
             className="w-10 h-10 bg-[#0B1017]/90 backdrop-blur-md border border-[#26303B] rounded flex items-center justify-center text-[#8994A3] hover:text-[#FF8A3D] hover:border-[#FF8A3D] transition-colors cursor-pointer">
             <span className="material-symbols-outlined text-lg">my_location</span>
           </button>

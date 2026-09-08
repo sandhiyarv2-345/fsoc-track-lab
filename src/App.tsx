@@ -6,7 +6,6 @@ import {
   CameraGimbalState,
   TelemetryPoint,
   LogEntry,
-  Scenario,
   AppSettings,
   PerformanceStats,
   TrackingPipelineState,
@@ -14,11 +13,11 @@ import {
   BenchmarkContext,
   CompletedAlgorithmRun,
   TrackingAlgorithm,
+  VideoTrackerTelemetry,
 } from './types';
 import {
   DEFAULT_CONFIG,
   DEFAULT_SETTINGS,
-  PRESET_SCENARIOS,
   initializeTargets,
   updateTargetPositions,
   initTrackingPipeline,
@@ -36,6 +35,7 @@ import { PerformanceView } from './components/PerformanceView';
 import { ScenariosLogsView } from './components/ScenariosLogsView';
 import { SettingsView } from './components/SettingsView';
 import { BenchmarkView } from './components/BenchmarkView';
+import { VideoInputView } from './components/VideoInputView';
 import { DocumentationModal } from './components/DocumentationModal';
 import { SupportModal } from './components/SupportModal';
 
@@ -48,9 +48,8 @@ export default function App() {
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
   const [showSupportModal, setShowSupportModal] = useState<boolean>(false);
 
-  // Settings & Scenarios
+  // Settings
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
-  const [scenarios, setScenarios] = useState<Scenario[]>(PRESET_SCENARIOS);
   const [activeScenarioId, setActiveScenarioId] = useState<string | null>(null);
 
   // Simulation State
@@ -88,6 +87,18 @@ export default function App() {
     configDisplayName: null,
   });
 
+  // Record genuine system-ready event on mount
+  useEffect(() => {
+    addLog('SYSTEM_READY', 'Application initialized. Awaiting simulation configuration.', 'info');
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Clear video telemetry when navigating away from video input
+  useEffect(() => {
+    if (currentScreen !== 'videoinput') {
+      setVideoTelemetry(null);
+    }
+  }, [currentScreen]);
+
   // Keep refs in sync with state
   useEffect(() => {
     cameraAlgorithmRef.current = camera.algorithm;
@@ -123,30 +134,8 @@ export default function App() {
   const [telemetryHistory, setTelemetryHistory] = useState<TelemetryPoint[]>([]);
   const [errorHistory, setErrorHistory] = useState<{ pan: number; tilt: number; time: string }[]>([]);
 
-  // Logs
-  const [logs, setLogs] = useState<LogEntry[]>([
-    {
-      id: 'log_0',
-      time: 'SYSTEM',
-      event: 'SYSTEM_BOOT',
-      data: 'FSOC Optical Terminal Initialized. Gimbal calibrate OK.',
-      type: 'info',
-    },
-    {
-      id: 'log_1',
-      time: 'SYSTEM',
-      event: 'AI_MODEL_LOAD',
-      data: 'Deep Beacon Centroid weights loaded into memory.',
-      type: 'info',
-    },
-    {
-      id: 'log_2',
-      time: 'SYSTEM',
-      event: 'STANDBY',
-      data: 'Ready for simulation scenario activation.',
-      type: 'success',
-    },
-  ]);
+  // Logs — starts empty; only real system events are recorded
+  const [logs, setLogs] = useState<LogEntry[]>([]);
 
   // Benchmark Context (persisted across navigation)
   const [benchmarkContext, setBenchmarkContext] = useState<BenchmarkContext>({
@@ -167,17 +156,18 @@ export default function App() {
   // Completed Algorithm Runs (actual live simulation telemetry)
   const [completedRuns, setCompletedRuns] = useState<CompletedAlgorithmRun[]>([]);
 
-  // Pending benchmark handoff (config + seed + algorithm to run)
-  const [pendingBenchmarkRun, setPendingBenchmarkRun] = useState<{
-    config: SimulationConfig;
-    seed: number;
-    algorithm: TrackingAlgorithm;
-  } | null>(null);
+  // Simulation session ID — increments when a genuinely new session starts.
+  // Same session = same config + seed (allows running multiple algorithms for comparison).
+  // New session = different config or seed (clears old completed runs).
+  const [simulationSessionId, setSimulationSessionId] = useState<number>(0);
+
+  // Video Input telemetry — lifted from VideoInputView so BottomTelemetry can display it
+  const [videoTelemetry, setVideoTelemetry] = useState<VideoTrackerTelemetry | null>(null);
 
   // Append new log helper
   const addLog = useCallback((event: string, data: string, type: LogEntry['type'] = 'info') => {
     const now = new Date();
-    const time = now.toTimeString().substring(0, 8);
+    const time = now.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }) + ' IST';
     const newEntry: LogEntry = {
       id: `log_${Date.now()}_${Math.random()}`,
       time,
@@ -193,9 +183,8 @@ export default function App() {
     result: BenchmarkResult,
     config: SimulationConfig,
     seed: number,
-    configSource: 'preset' | 'custom',
-    selectedPresetIndex: number,
-    configDisplayName: string,
+    configSource: 'preset' | 'custom' = 'custom',
+    selectedPresetIndex: number | null = null,
   ) => {
     const context: BenchmarkContext = {
       result,
@@ -204,7 +193,7 @@ export default function App() {
       timestamp: new Date().toISOString(),
       configSource,
       selectedPresetIndex,
-      configDisplayName,
+      configDisplayName: config.configDisplayName || config.name,
     };
     setBenchmarkContext(context);
     addLog('BENCHMARK_COMPLETE', `Benchmark completed. Recommended: ${result.comparison.recommendation}`, 'success');
@@ -237,69 +226,28 @@ export default function App() {
     addLog('RUN_COMPLETE', `Live run completed for ${algorithm}. Telemetry stored.`, 'success');
   }, [addLog]);
 
-  // Trigger a simulation run with specific config, seed, and algorithm (from benchmark handoff)
-  const runBenchmarkAlgorithm = useCallback((
-    config: SimulationConfig,
-    seed: number,
-    algorithm: TrackingAlgorithm
-  ) => {
-    setPendingBenchmarkRun({ config, seed, algorithm });
-    setShowNewSimModal(false);
-    
-    // We'll handle the actual start in the effect below
-    // For now, just set up the state and navigate to camera view
-    if (currentScreen !== 'cameraview') {
-      setCurrentScreen('cameraview');
-    }
-  }, []);
-
-  // Handle pending benchmark run (start simulation with benchmark config/seed/algorithm)
-  const handlePendingBenchmarkRun = useCallback(() => {
-    if (!pendingBenchmarkRun) return;
-    
-    const { config, seed, algorithm } = pendingBenchmarkRun;
-    setPendingBenchmarkRun(null);
-    
-    // Start simulation with benchmark config and seed
-    setActiveConfig(config);
-    setActiveScenarioId(null);
-    setElapsedSec(0);
-    setTelemetryHistory([]);
-    telemetryHistoryRef.current = [];
-    setErrorHistory([]);
-
-    const initialTargets = initializeTargets(config);
-    setTargets(initialTargets);
-
-    const initialPan = config.initialPosition === 'Offset Left (45°)' ? -45 : config.initialPosition === 'Offset Right (45°)' ? 45 : (Math.random() - 0.5) * 20;
-    setCamera({
-      pan: initialPan,
-      tilt: 0,
-      zoom: 1.0,
-      panVelocity: 0,
-      tiltVelocity: 0,
-      fov: config.cameraFov,
-      opticalFilter: true,
-      autoTracking: true,
-      algorithm,
-    });
-
-    trackingPipelineRef.current = initTrackingPipeline(algorithm, initialPan, 0);
-
-    setIsSimRunning(true);
-
-    addLog('BENCHMARK_RUN_START', `Starting live run for ${algorithm} with benchmark seed ${seed}`, 'success');
-  }, [pendingBenchmarkRun, addLog]);
-
-  // Effect to handle pending benchmark run
-  useEffect(() => {
-    if (pendingBenchmarkRun && !isSimRunning) {
-      handlePendingBenchmarkRun();
-    }
-  }, [pendingBenchmarkRun, isSimRunning, handlePendingBenchmarkRun]);
-
   // Start a new simulation with config
-  const handleStartSimulation = (newConfig: SimulationConfig, scenarioId: string | null = null, overrideSeed?: number, overrideAlgorithm?: TrackingAlgorithm) => {
+  const handleStartSimulation = (
+    newConfig: SimulationConfig,
+    scenarioId: string | null = null,
+    overrideSeed?: number,
+    overrideAlgorithm?: TrackingAlgorithm,
+    preserveRuns: boolean = false,
+  ) => {
+    // Check if this is a genuinely new session (different config or seed)
+    // Don't clear runs if preserveRuns is true (e.g., running different algorithms from same benchmark)
+    if (!preserveRuns) {
+      const currentSeed = benchmarkContextRef.current.seed;
+      const currentConfigId = activeConfig.id;
+      const isNewSession = newConfig.id !== currentConfigId || (overrideSeed !== undefined && overrideSeed !== currentSeed);
+
+      if (isNewSession && completedRuns.length > 0) {
+        // Clear old completed runs — this is a new simulation session
+        setCompletedRuns([]);
+        addLog('SESSION_NEW', 'New simulation session started. Previous run results cleared.', 'info');
+      }
+    }
+
     setActiveConfig(newConfig);
     setActiveScenarioId(scenarioId);
     setElapsedSec(0);
@@ -310,14 +258,14 @@ export default function App() {
     const initialTargets = initializeTargets(newConfig);
     setTargets(initialTargets);
 
-    const initialPan = newConfig.initialPosition === 'Offset Left (45°)' ? -45 : newConfig.initialPosition === 'Offset Right (45°)' ? 45 : (Math.random() - 0.5) * 20;
+    const initialPan = newConfig.initialPosition === 'Offset Left (45°)' ? -45 : newConfig.initialPosition === 'Offset Right (45°)' ? 45 : 0;
     setCamera({
       pan: initialPan,
       tilt: 0,
       zoom: 1.0,
       panVelocity: 0,
       tiltVelocity: 0,
-      fov: newConfig.cameraFov,
+      fov: newConfig.cameraFovHorizontal || newConfig.cameraFov,
       opticalFilter: true,
       autoTracking: true,
       algorithm: overrideAlgorithm || 'AI Centroid',
@@ -336,6 +284,18 @@ export default function App() {
       setCurrentScreen('cameraview');
     }
   };
+
+  // Trigger a simulation run with specific config, seed, and algorithm (from benchmark handoff)
+  const runBenchmarkAlgorithm = useCallback((
+    config: SimulationConfig,
+    seed: number,
+    algorithm: TrackingAlgorithm
+  ) => {
+    // Start simulation with benchmark config + seed + algorithm, navigate to Camera View
+    // preserveRuns=true because benchmark algorithm runs are part of the same session
+    handleStartSimulation(config, null, seed, algorithm, true);
+    setCurrentScreen('cameraview');
+  }, []);
 
   // Toggle running state
   const handleToggleSimRunning = () => {
@@ -533,15 +493,7 @@ export default function App() {
 
             {currentScreen === 'scenarios' && (
               <ScenariosLogsView
-                scenarios={scenarios}
                 logs={logs}
-                activeScenarioId={activeScenarioId}
-                onRunScenario={(scen) => handleStartSimulation(scen.config, scen.id)}
-                onStopScenario={() => {
-                  setIsSimRunning(false);
-                  addLog('SIM_STOPPED', 'Simulation manually halted.', 'warning');
-                }}
-                onOpenNewScenario={() => setShowNewSimModal(true)}
                 onClearLogs={() => setLogs([])}
                 isSimRunning={isSimRunning}
               />
@@ -553,22 +505,7 @@ export default function App() {
                 config={activeConfig}
                 completedRuns={completedRuns}
                 benchmarkContext={benchmarkContext}
-              />
-            )}
-
-            {currentScreen === 'logs' && (
-              <ScenariosLogsView
-                scenarios={scenarios}
-                logs={logs}
-                activeScenarioId={activeScenarioId}
-                onRunScenario={(scen) => handleStartSimulation(scen.config, scen.id)}
-                onStopScenario={() => {
-                  setIsSimRunning(false);
-                  addLog('SIM_STOPPED', 'Simulation manually halted.', 'warning');
-                }}
-                onOpenNewScenario={() => setShowNewSimModal(true)}
-                onClearLogs={() => setLogs([])}
-                isSimRunning={isSimRunning}
+                simulationSessionId={simulationSessionId}
               />
             )}
 
@@ -593,9 +530,20 @@ export default function App() {
               />
             )}
 
+            {currentScreen === 'videoinput' && (
+              <VideoInputView
+                onSwitchView={(v) => setCurrentScreen(v)}
+                onVideoTelemetryUpdate={setVideoTelemetry}
+              />
+            )}
+
             {/* Persistent Bottom Telemetry Bar on Dashboard, Performance, Camera, 3D, and Scenarios */}
             {currentScreen !== 'landing' && (
-              <BottomTelemetry telemetry={telemetry} />
+              <BottomTelemetry
+                telemetry={telemetry}
+                inputMode={currentScreen === 'videoinput' ? 'video' : 'simulation'}
+                videoTelemetry={currentScreen === 'videoinput' ? videoTelemetry : null}
+              />
             )}
           </div>
         </div>

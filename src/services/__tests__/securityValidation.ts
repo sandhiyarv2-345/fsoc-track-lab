@@ -129,10 +129,19 @@ function testInputValidation(): void {
     targetSpeedMach: 2.4,
     trajectory: 'Random',
     cameraFov: 20,
+    cameraFovHorizontal: 20,
+    cameraFovVertical: 15,
     initialPosition: 'Default Center',
-    panSpeedLimit: 30,
-    tiltSpeedLimit: 25,
-    disturbances: { sensorNoise: false, vibration: true, atmosphericTurbulence: false, motionJitter: true, intensity: 80 },
+    panSpeedLimit: 7,
+    tiltSpeedLimit: 7,
+    targetSizePx: 10,
+    targetShape: 'square',
+    initialTargetLocationMode: 'random',
+    initialTargetAzimuth: 0,
+    initialTargetElevation: 5,
+    screenWidth: 2000,
+    screenHeight: 2000,
+    disturbances: { sensorNoise: false, vibration: true, atmosphericTurbulence: false, motionJitter: true, intensity: 80, imageNoiseTypes: [] as any[], saltPepperProbability: 0.10, gaussianStdDevPx: 0, poissonStrength: 0, cameraJitterMaxPxPerFrame: 0, atmosphericCondition: 'clear' as const, platformMotionEnabled: false, platformMotionType: 'linear' as const, platformMotionMaxPxPerFrame: 0 },
     durationSec: 30,
     timeStep: 0.016,
   };
@@ -174,8 +183,8 @@ function testInputValidation(): void {
   assert(validConfig.targetCount === 1, 'Valid targetCount preserved');
   assert(validConfig.targetSpeedMach === 2.4, 'Valid targetSpeedMach preserved');
   assert(validConfig.cameraFov === 20, 'Valid cameraFov preserved');
-  assert(validConfig.panSpeedLimit === 30, 'Valid panSpeedLimit preserved');
-  assert(validConfig.tiltSpeedLimit === 25, 'Valid tiltSpeedLimit preserved');
+  assert(validConfig.panSpeedLimit === 7, 'Valid panSpeedLimit preserved');
+  assert(validConfig.tiltSpeedLimit === 7, 'Valid tiltSpeedLimit preserved');
   assert(validConfig.durationSec === 30, 'Valid durationSec preserved');
   assert(validConfig.timeStep === 0.016, 'Valid timeStep preserved');
 }
@@ -240,10 +249,19 @@ function testConfigIdentity(): void {
     targetSpeedMach: 3.0,
     trajectory: 'Evasive Maneuvers',
     cameraFov: 15,
+    cameraFovHorizontal: 4,
+    cameraFovVertical: 3,
     initialPosition: 'Offset Left (45°)',
     panSpeedLimit: 40,
     tiltSpeedLimit: 35,
-    disturbances: { sensorNoise: true, vibration: true, atmosphericTurbulence: true, motionJitter: true, intensity: 90 },
+    targetSizePx: 10,
+    targetShape: 'square',
+    initialTargetLocationMode: 'random',
+    initialTargetAzimuth: 0,
+    initialTargetElevation: 5,
+    screenWidth: 2000,
+    screenHeight: 2000,
+    disturbances: { sensorNoise: true, vibration: true, atmosphericTurbulence: true, motionJitter: true, intensity: 90, imageNoiseTypes: [] as any[], saltPepperProbability: 0.10, gaussianStdDevPx: 0, poissonStrength: 0, cameraJitterMaxPxPerFrame: 0, atmosphericCondition: 'clear' as const, platformMotionEnabled: false, platformMotionType: 'linear' as const, platformMotionMaxPxPerFrame: 0 },
     durationSec: 60,
     timeStep: 0.016,
   };

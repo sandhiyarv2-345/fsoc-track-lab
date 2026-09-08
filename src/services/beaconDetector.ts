@@ -88,7 +88,9 @@ export function detectBeacon(
   algorithm: TrackingAlgorithm,
   effectiveFov: number,
   elapsedSec: number,
-  noise?: SimulationNoise
+  noise?: SimulationNoise,
+  hFov?: number,
+  vFov?: number
 ): DetectionResult {
   if (!frame.beaconPresent || frame.beaconIntensity < 0.03) {
     return {
@@ -140,7 +142,9 @@ export function detectBeacon(
     measuredPixelY,
     effectiveFov,
     frame.width,
-    frame.height
+    frame.height,
+    hFov,
+    vFov
   );
 
   const normalizedDist = Math.sqrt(

@@ -1,12 +1,21 @@
-import React, { useState } from 'react';
+/**
+ * FSOC Track Lab — Algorithm Benchmark
+ *
+ * Preset Scenario (18 PS scenarios) or Custom Config benchmark.
+ * Uses benchmarkRunner.ts for deterministic execution.
+ * Shows comparison results and recommends the best algorithm.
+ * "Run Recommended Algorithm" launches a live simulation in Camera View.
+ */
+
+import React, { useState, useEffect } from 'react';
 import {
   BenchmarkResult,
+  BenchmarkContext,
   SimulationConfig,
   AppSettings,
   TrackingAlgorithm,
-  BenchmarkContext,
 } from '../types';
-import { PRESET_SCENARIOS } from '../services/simulationEngine';
+import { BENCHMARK_SCENARIOS } from '../services/benchmarkScenarios';
 import { runBenchmark, benchmarkToCsv } from '../services/benchmarkRunner';
 
 interface BenchmarkViewProps {
@@ -18,9 +27,8 @@ interface BenchmarkViewProps {
     result: BenchmarkResult,
     config: SimulationConfig,
     seed: number,
-    configSource: 'preset' | 'custom',
-    selectedPresetIndex: number,
-    configDisplayName: string,
+    configSource?: 'preset' | 'custom',
+    selectedPresetIndex?: number | null,
   ) => void;
   onRunBenchmarkAlgorithm: (config: SimulationConfig, seed: number, algorithm: TrackingAlgorithm) => void;
 }
@@ -35,39 +43,49 @@ export const BenchmarkView: React.FC<BenchmarkViewProps> = ({
   onSaveBenchmarkContext,
   onRunBenchmarkAlgorithm,
 }) => {
-  const [configSource, setConfigSource] = useState<ConfigSource>(
-    benchmarkContext.configSource === 'custom' ? 'custom' : 'preset'
-  );
-  const [selectedPresetIndex, setSelectedPresetIndex] = useState<number>(
-    benchmarkContext.selectedPresetIndex ?? 0
-  );
-  const [snapshotConfig, setSnapshotConfig] = useState<SimulationConfig | null>(
-    benchmarkContext.configSource === 'custom' ? benchmarkContext.config : null
-  );
+  const [configSource, setConfigSource] = useState<ConfigSource>('preset');
+  const [selectedPresetIndex, setSelectedPresetIndex] = useState<number>(0);
+  const [snapshotConfig, setSnapshotConfig] = useState<SimulationConfig | null>(null);
   const [snapshotSettings, setSnapshotSettings] = useState<AppSettings | null>(null);
-  const [hasSnapshot, setHasSnapshot] = useState<boolean>(
-    benchmarkContext.configSource === 'custom' && benchmarkContext.config !== null
-  );
-  const [seed, setSeed] = useState<number>(benchmarkContext.seed ?? 42);
+  const [hasSnapshot, setHasSnapshot] = useState<boolean>(false);
+  const [seed, setSeed] = useState<number>(42);
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [progress, setProgress] = useState<string>('');
-  const [result, setResult] = useState<BenchmarkResult | null>(benchmarkContext.result);
+  const [result, setResult] = useState<BenchmarkResult | null>(null);
 
-  const scenarios = PRESET_SCENARIOS;
+  // Restore benchmark session from App-level context on mount
+  useEffect(() => {
+    if (benchmarkContext.result && benchmarkContext.config && benchmarkContext.seed != null) {
+      setResult(benchmarkContext.result);
+      setSeed(benchmarkContext.seed);
+      if (benchmarkContext.configSource) {
+        setConfigSource(benchmarkContext.configSource);
+      }
+      if (benchmarkContext.selectedPresetIndex != null) {
+        setSelectedPresetIndex(benchmarkContext.selectedPresetIndex);
+      }
+      if (benchmarkContext.configSource === 'custom') {
+        setSnapshotConfig(benchmarkContext.config);
+        setHasSnapshot(true);
+      }
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const allAlgorithms: TrackingAlgorithm[] = ['AI Centroid', 'Kalman Predictive', 'Deep Beacon'];
 
   // Resolve the config to use for benchmarking
   const resolvedConfig: SimulationConfig = (() => {
     if (configSource === 'custom') {
       return snapshotConfig ?? activeConfig;
     }
-    return scenarios[selectedPresetIndex]?.config ?? scenarios[0].config;
+    return BENCHMARK_SCENARIOS[selectedPresetIndex]?.config ?? BENCHMARK_SCENARIOS[0].config;
   })();
 
   const resolvedSettings: AppSettings = snapshotSettings ?? settings;
 
   const configSourceLabel = configSource === 'custom'
     ? (hasSnapshot ? 'Source: Custom Configuration (snapshot)' : 'Source: Current Simulation Config')
-    : `Preset: ${scenarios[selectedPresetIndex]?.title ?? 'N/A'}`;
+    : `Preset: ${BENCHMARK_SCENARIOS[selectedPresetIndex]?.name ?? 'N/A'}`;
 
   const randomizeSeed = () => {
     setSeed(Math.floor(Math.random() * 999999) + 1);
@@ -87,37 +105,24 @@ export const BenchmarkView: React.FC<BenchmarkViewProps> = ({
 
     setTimeout(() => {
       try {
-        setProgress('Running AI Centroid...');
-        setTimeout(() => {
-          try {
-            const benchmarkResult = runBenchmark({
-              simulationConfig: resolvedConfig,
-              settings: resolvedSettings,
-              seed,
-              algorithms: ['AI Centroid', 'Kalman Predictive', 'Deep Beacon'],
-            });
-
-            setResult(benchmarkResult);
-            const configDisplayName = configSource === 'custom'
-              ? 'Custom Configuration'
-              : scenarios[selectedPresetIndex]?.title ?? 'Preset';
-            onSaveBenchmarkContext(
-              benchmarkResult,
-              resolvedConfig,
-              seed,
-              configSource,
-              selectedPresetIndex,
-              configDisplayName,
-            );
-            setProgress('Benchmark complete.');
-          } catch (err) {
-            setProgress(`Error: ${err instanceof Error ? err.message : String(err)}`);
-          } finally {
-            setIsRunning(false);
-          }
-        }, 50);
+        const benchmarkResult = runBenchmark({
+          simulationConfig: resolvedConfig,
+          settings: resolvedSettings,
+          seed,
+          algorithms: allAlgorithms,
+        });
+        setResult(benchmarkResult);
+        onSaveBenchmarkContext(
+          benchmarkResult,
+          resolvedConfig,
+          seed,
+          configSource,
+          configSource === 'preset' ? selectedPresetIndex : null,
+        );
+        setProgress('Benchmark complete.');
       } catch (err) {
         setProgress(`Error: ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
         setIsRunning(false);
       }
     }, 50);
@@ -138,13 +143,16 @@ export const BenchmarkView: React.FC<BenchmarkViewProps> = ({
   };
 
   const winnerAlgo = result?.comparison.recommendation;
-  const allAlgorithms: TrackingAlgorithm[] = ['AI Centroid', 'Kalman Predictive', 'Deep Beacon'];
 
   const disturbanceFlags: string[] = [];
   if (resolvedConfig.disturbances.sensorNoise) disturbanceFlags.push('Sensor Noise');
   if (resolvedConfig.disturbances.vibration) disturbanceFlags.push('Vibration');
   if (resolvedConfig.disturbances.atmosphericTurbulence) disturbanceFlags.push('Turbulence');
   if (resolvedConfig.disturbances.motionJitter) disturbanceFlags.push('Motion Jitter');
+  if (resolvedConfig.disturbances.imageNoiseTypes?.length) disturbanceFlags.push(resolvedConfig.disturbances.imageNoiseTypes.join('+'));
+  if (resolvedConfig.disturbances.atmosphericCondition && resolvedConfig.disturbances.atmosphericCondition !== 'clear') disturbanceFlags.push(resolvedConfig.disturbances.atmosphericCondition);
+  if (resolvedConfig.disturbances.cameraJitterMaxPxPerFrame > 0) disturbanceFlags.push(`Jitter ${resolvedConfig.disturbances.cameraJitterMaxPxPerFrame}px`);
+  if (resolvedConfig.disturbances.platformMotionEnabled) disturbanceFlags.push(`Platform ${resolvedConfig.disturbances.platformMotionMaxPxPerFrame}px`);
   const disturbanceSummary = disturbanceFlags.length > 0
     ? `${disturbanceFlags.join(', ')} @ ${resolvedConfig.disturbances.intensity}%`
     : 'None';
@@ -204,9 +212,9 @@ export const BenchmarkView: React.FC<BenchmarkViewProps> = ({
               onChange={(e) => setSelectedPresetIndex(parseInt(e.target.value))}
               className="bg-[#323538] border border-[#564338] text-[#e0e3e6] font-['JetBrains_Mono'] text-xs p-2.5 rounded focus:border-[#ffb68d] focus:outline-none"
             >
-              {scenarios.map((s, i) => (
+              {BENCHMARK_SCENARIOS.map((s, i) => (
                 <option key={s.id} value={i}>
-                  {s.title} — {s.description}
+                  {s.id} — {s.name}
                 </option>
               ))}
             </select>
@@ -318,7 +326,7 @@ export const BenchmarkView: React.FC<BenchmarkViewProps> = ({
           </div>
           <div>
             <span className="text-[#a58c7f] uppercase block mb-0.5">FOV</span>
-            <span className="text-[#e0e3e6] font-bold">{resolvedConfig.cameraFov}°</span>
+            <span className="text-[#e0e3e6] font-bold">{resolvedConfig.cameraFovHorizontal ?? resolvedConfig.cameraFov}° × {resolvedConfig.cameraFovVertical ?? resolvedConfig.cameraFov}°</span>
           </div>
           <div>
             <span className="text-[#a58c7f] uppercase block mb-0.5">Disturbance</span>
@@ -328,9 +336,6 @@ export const BenchmarkView: React.FC<BenchmarkViewProps> = ({
             <span className="text-[#a58c7f] uppercase block mb-0.5">Duration</span>
             <span className="text-[#e0e3e6] font-bold">{resolvedConfig.durationSec}s</span>
           </div>
-        </div>
-        <div className="mt-2 font-['JetBrains_Mono'] text-[9px] text-[#a58c7f]">
-          Presets are standardized test configurations. You can also benchmark any custom configuration.
         </div>
       </div>
 
@@ -385,6 +390,7 @@ export const BenchmarkView: React.FC<BenchmarkViewProps> = ({
                     { label: 'Lock Retention (%)', key: 'lockRetentionPct' as const, fmt: (v: number) => v.toFixed(1), lower: false },
                     { label: 'Acq Time (s)', key: 'acquisitionTimeSec' as const, fmt: (v: number) => v < Infinity ? v.toFixed(2) : 'N/A', lower: true },
                     { label: 'Avg Confidence (%)', key: 'avgConfidence' as const, fmt: (v: number) => v.toFixed(1), lower: false },
+                    { label: 'FPS', key: 'avgFps' as const, fmt: (v: number) => v.toFixed(0), lower: false },
                     { label: 'Score', key: '_score' as const, fmt: (v: number) => (v * 100).toFixed(1), lower: false },
                   ].map((row) => {
                     const values = allAlgorithms.map((algo) => {
@@ -400,7 +406,7 @@ export const BenchmarkView: React.FC<BenchmarkViewProps> = ({
                       })
                       .map((v) => {
                         if (row.key === '_score') return v.scored?.score ?? 0;
-                        return v.metrics ? v.metrics[row.key] : 0;
+                        return v.metrics ? (v.metrics as any)[row.key] : 0;
                       });
 
                     const bestVal = numValues.length > 0
@@ -417,7 +423,7 @@ export const BenchmarkView: React.FC<BenchmarkViewProps> = ({
                             rawVal = scored?.score ?? 0;
                             displayVal = row.fmt(rawVal);
                           } else {
-                            rawVal = metrics ? metrics[row.key] : 0;
+                            rawVal = metrics ? (metrics as any)[row.key] : 0;
                             displayVal = metrics
                               ? row.fmt(rawVal)
                               : 'N/A';
@@ -446,7 +452,7 @@ export const BenchmarkView: React.FC<BenchmarkViewProps> = ({
             </div>
           </div>
 
-          {/* Recommendation */}
+          {/* Recommendation + Run Buttons */}
           <div className="bg-[#1d2022] border border-[#42e09c]/30 rounded-lg p-5 mb-6">
             <div className="flex items-center gap-2 mb-3">
               <span className="material-symbols-outlined text-[20px] text-[#42e09c]">psychology</span>
@@ -460,7 +466,7 @@ export const BenchmarkView: React.FC<BenchmarkViewProps> = ({
             <p className="font-['JetBrains_Mono'] text-[11px] text-[#ddc1b3] leading-relaxed mb-4">
               {result.comparison.recommendationReason}
             </p>
-            
+
             {/* Run Recommended Algorithm */}
             <button
               onClick={() => onRunBenchmarkAlgorithm(resolvedConfig, seed, result.comparison.recommendation)}
@@ -470,7 +476,7 @@ export const BenchmarkView: React.FC<BenchmarkViewProps> = ({
               <span className="material-symbols-outlined text-[18px]">play_arrow</span>
               RUN RECOMMENDED ALGORITHM
             </button>
-            
+
             <div className="font-['JetBrains_Mono'] text-[9px] text-[#a58c7f] mt-2 text-center">
               Launches live simulation with benchmark config + seed + recommended algorithm
             </div>

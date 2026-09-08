@@ -23,10 +23,10 @@ export const Navigation: React.FC<NavigationProps> = ({
     { id: 'simulation' as NavScreen, label: 'Simulation', icon: 'precision_manufacturing', isAction: true },
     { id: 'cameraview' as NavScreen, label: 'Camera View', icon: 'videocam' },
     { id: 'world3d' as NavScreen, label: '3D World', icon: 'language' },
-    { id: 'scenarios' as NavScreen, label: 'Scenarios', icon: 'list_alt' },
+    { id: 'scenarios' as NavScreen, label: 'Performance Log', icon: 'list_alt' },
     { id: 'performance' as NavScreen, label: 'Performance', icon: 'analytics' },
     { id: 'benchmark' as NavScreen, label: 'Benchmark', icon: 'science' },
-    { id: 'logs' as NavScreen, label: 'Logs', icon: 'description' },
+    { id: 'videoinput' as NavScreen, label: 'Video Input', icon: 'videocam' },
     { id: 'settings' as NavScreen, label: 'Settings', icon: 'settings' },
   ];
 

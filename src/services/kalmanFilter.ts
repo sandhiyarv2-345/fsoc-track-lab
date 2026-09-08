@@ -1,4 +1,4 @@
-import { KalmanState, DetectionResult, SimulationConfig } from '../types';
+import { KalmanState, DetectionResult, SimulationConfig, KalmanConfig } from '../types';
 
 // Coordinate frame: The state vector x = [az, azVel, el, elVel] represents
 // ABSOLUTE target angles in world frame (degrees and deg/s).
@@ -7,14 +7,15 @@ import { KalmanState, DetectionResult, SimulationConfig } from '../types';
 // The orchestrator converts relative detector output to absolute before
 // calling kalmanUpdate.
 
-export function createInitialKalmanState(): KalmanState {
+export function createInitialKalmanState(config?: KalmanConfig): KalmanState {
+  const p = config?.initialCovarianceP ?? 100;
   return {
     x: [0, 0, 0, 0],
     P: [
-      [100, 0, 0, 0],
-      [0, 100, 0, 0],
-      [0, 0, 100, 0],
-      [0, 0, 0, 100],
+      [p, 0, 0, 0],
+      [0, p, 0, 0],
+      [0, 0, p, 0],
+      [0, 0, 0, p],
     ],
     initialized: false,
     lastUpdateTime: 0,
@@ -214,9 +215,11 @@ function matMul4x2_2x4(A: number[][], B: number[][]): number[][] {
 export function kalmanPredict(
   state: KalmanState,
   dt: number,
-  config: SimulationConfig
+  config: SimulationConfig,
+  kalmanConfig?: KalmanConfig
 ): KalmanState {
   const intensity = config.disturbances.intensity / 100;
+  const qScale = kalmanConfig?.processNoiseQScale ?? 1.0;
 
   const F: number[][] = [
     [1, dt, 0, 0],
@@ -225,7 +228,7 @@ export function kalmanPredict(
     [0, 0, 0, 1],
   ];
 
-  const q = 0.5 + intensity * 2.0;
+  const q = (0.5 + intensity * 2.0) * qScale;
   const Q: number[][] = [
     [dt * dt * dt * q / 3, dt * dt * q / 2, 0, 0],
     [dt * dt * q / 2, dt * q, 0, 0],
@@ -254,7 +257,8 @@ export function kalmanPredict(
 export function kalmanUpdate(
   state: KalmanState,
   measurement: DetectionResult,
-  config: SimulationConfig
+  config: SimulationConfig,
+  kalmanConfig?: KalmanConfig
 ): KalmanState {
   if (!measurement.detected) return state;
 
@@ -264,7 +268,8 @@ export function kalmanUpdate(
   ];
 
   const confidenceFactor = Math.max(0.1, measurement.confidence / 100);
-  const baseNoise = 0.5 + (1 - confidenceFactor) * 5.0;
+  const rBase = kalmanConfig?.measurementNoiseRBase ?? 0.5;
+  const baseNoise = rBase + (1 - confidenceFactor) * 5.0;
   const R: number[][] = [
     [baseNoise, 0],
     [0, baseNoise],
